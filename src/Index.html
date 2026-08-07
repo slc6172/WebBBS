@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BBS 系統</title>
+  <style>
+    /* 1. 滿版與基礎佈局 */
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      overflow: hidden; /* 鎖定外層，防止全頁滾動條 */
+      background-color: #f4f6f9;
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* 2. 最上方固定列 (Top Bar) */
+    .top-bar {
+      height: 50px;
+      background-color: #1e293b;
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 20px;
+      flex-shrink: 0;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .top-bar .logo {
+      font-size: 1.2rem;
+      font-weight: bold;
+      letter-spacing: 1px;
+    }
+    .top-bar .user-panel {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.9rem;
+    }
+    .top-bar input {
+      padding: 4px 8px;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+    }
+
+    /* 3. 主區域雙欄分割 */
+    .main-container {
+      flex: 1;
+      display: flex;
+      height: calc(100vh - 50px);
+      overflow: hidden;
+    }
+
+    /* 【左半部】: 看板選單 ➔ 高密度文章列表 ➔ 折疊發文區 */
+    .left-panel {
+      width: 380px;
+      min-width: 320px;
+      border-right: 1px solid #cbd5e1;
+      display: flex;
+      flex-direction: column;
+      padding: 12px;
+      background-color: #ffffff;
+      gap: 8px;
+    }
+
+    .board-selector-box {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .board-selector-box select {
+      flex: 1;
+      padding: 6px 10px;
+      border-radius: 4px;
+      border: 1px solid #94a3b8;
+      font-size: 0.95rem;
+    }
+
+    /* 左側文章列表 (高密度單行版面 + 獨立滾動) */
+    .article-list-wrapper {
+      flex: 1;
+      overflow-y: auto;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      background-color: #ffffff;
+    }
+
+    /* 單筆文章高密度樣式 (36px 高) */
+    .article-item {
+      padding: 6px 10px;
+      border-bottom: 1px solid #f1f5f9;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      height: 36px;
+      box-sizing: border-box;
+      transition: background 0.1s;
+    }
+    .article-item:hover {
+      background-color: #f1f5f9;
+    }
+    .article-item.active {
+      background-color: #dbeafe;
+      border-left: 4px solid #2563eb;
+    }
+    .article-item .title {
+      font-size: 0.88rem;
+      font-weight: 500;
+      color: #0f172a;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      flex: 1;
+      margin-right: 12px;
+    }
+    .article-item .meta {
+      font-size: 0.78rem;
+      color: #64748b;
+      display: flex;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    /* 左側按鈕與折疊發文區 */
+    .btn-toggle-post {
+      width: 100%;
+      padding: 8px;
+      background-color: #2563eb;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: bold;
+      font-size: 0.9rem;
+    }
+    .btn-toggle-post:hover { background-color: #1d4ed8; }
+
+    .post-article-form {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 12px;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      background-color: #f8fafc;
+    }
+    .post-article-form .form-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .post-article-form h4 { margin: 0; color: #334155; }
+    .post-article-form .btn-close {
+      cursor: pointer;
+      color: #64748b;
+      font-size: 0.9rem;
+      font-weight: bold;
+    }
+    .post-article-form input,
+    .post-article-form textarea {
+      width: 100%;
+      padding: 6px 8px;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      font-size: 0.85rem;
+    }
+    .post-article-form textarea { height: 60px; resize: none; }
+
+    /* 【右半部】: 文章詳細內文 ➔ 回覆列表 ➔ 回覆欄位 */
+    .right-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 24px;
+      overflow-y: auto;
+      background-color: #ffffff;
+    }
+
+    .article-detail-card {
+      border-bottom: 2px solid #e2e8f0;
+      padding-bottom: 20px;
+      margin-bottom: 20px;
+    }
+    .article-detail-card .header-title {
+      font-size: 1.5rem;
+      font-weight: bold;
+      color: #1e293b;
+      margin-bottom: 8px;
+    }
+    .article-detail-card .header-meta {
+      font-size: 0.85rem;
+      color: #64748b;
+      margin-bottom: 16px;
+    }
+    .article-detail-card .body-content {
+      font-size: 1rem;
+      line-height: 1.6;
+      color: #334155;
+      white-space: pre-wrap;
+    }
+
+    /* 回覆區塊 */
+    .replies-section {
+      margin-bottom: 24px;
+    }
+    .replies-section h4 { margin-bottom: 12px; color: #475569; }
+    .reply-item {
+      padding: 10px 12px;
+      border-radius: 6px;
+      background-color: #f1f5f9;
+      margin-bottom: 8px;
+    }
+    .reply-item .reply-meta {
+      font-size: 0.8rem;
+      color: #64748b;
+      margin-bottom: 4px;
+    }
+    .reply-item .reply-content {
+      font-size: 0.9rem;
+      color: #1e293b;
+    }
+
+    /* 發送回覆區 */
+    .post-reply-form {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: auto;
+      padding-top: 16px;
+      border-top: 1px solid #e2e8f0;
+    }
+    .post-reply-form textarea {
+      width: 100%;
+      height: 70px;
+      padding: 8px;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      resize: none;
+    }
+
+    /* 通用按鈕樣式 */
+    button.btn-primary {
+      padding: 6px 12px;
+      background-color: #2563eb;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: 500;
+    }
+    button.btn-primary:hover { background-color: #1d4ed8; }
+    button.secondary { background-color: #64748b; border: none; color: white; padding: 6px 12px; border-radius: 4px; cursor: pointer; }
+    button.secondary:hover { background-color: #475569; }
+
+    .placeholder-msg {
+      color: #94a3b8;
+      text-align: center;
+      margin-top: 100px;
+      font-size: 1.1rem;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 1. 最上方固定列 -->
+  <header class="top-bar">
+    <div class="logo">BBS 討論區</div>
+    <div class="user-panel" id="userPanel">
+      <!-- 登入狀態由 JavaScript 初始化載入 -->
+    </div>
+  </header>
+
+  <!-- 2. 下方雙欄主區域 -->
+  <main class="main-container">
+
+    <!-- 【左半部】：看板下拉選單 ➔ 文章列表 ➔ 折疊發文區 -->
+    <section class="left-panel">
+      <!-- 看板下拉選單 -->
+      <div class="board-selector-box">
+        <label for="boardSelect"><strong>看板：</strong></label>
+        <select id="boardSelect" onchange="onBoardChange()">
+          <option value="">載入看板中...</option>
+        </select>
+      </div>
+
+      <!-- 文章標題列表 (單行高密度) -->
+      <div class="article-list-wrapper" id="articleList">
+        <div class="placeholder-msg" style="margin-top: 40px; font-size: 0.9rem;">請選擇看板</div>
+      </div>
+
+      <!-- 折疊式發文按鈕與表單 -->
+      <button class="btn-toggle-post" id="btnTogglePost" onclick="togglePostForm()">+ 發表新文章</button>
+
+      <div class="post-article-form" id="postArticleForm" style="display: none;">
+        <div class="form-header">
+          <h4>發表新文章</h4>
+          <span class="btn-close" onclick="togglePostForm()">✕ 關閉</span>
+        </div>
+        <input type="text" id="newArticleTitle" placeholder="文章標題" />
+        <textarea id="newArticleContent" placeholder="撰寫文章內容..."></textarea>
+        <button class="btn-primary" onclick="handlePostArticle()">發布文章</button>
+      </div>
+    </section>
+
+    <!-- 【右半部】：文章詳細內文 + 回覆列表 + 留言區 -->
+    <section class="right-panel" id="rightPanel">
+      <div class="placeholder-msg">👈 請從左側點選文章查看內容</div>
+    </section>
+
+  </main>
+
+  <script>
+    // 全域變數狀態
+    var bootstrapData = <?!= bootstrapDataJson ?>;   // doGet 解析出的 {boardId?, articleId?}，供分享連結深連結使用
+    var scriptBaseUrl = <?!= scriptUrlJson ?>;   // 真正對外的網址，沙盒 iframe 裡的 location.href 不能用
+    var currentToken = sessionStorage.getItem('bbs_token') || '';
+    var currentUserId = '';
+    var currentRole = '';
+    var currentBoardId = '';
+    var currentArticleId = '';
+    var lastArticleDetail = null;   // 暫存目前顯示中的文章資料，編輯模式切換時不用重打一次 RPC
+    var isEditingArticle = false;
+
+    // 頁面初始化
+    window.onload = function() {
+      checkUserStatus();
+    };
+
+    // 1. 檢查並更新使用者權限狀態
+    function checkUserStatus() {
+      google.script.run.withSuccessHandler(function(status) {
+        currentRole = status.role;
+        currentUserId = status.userId;
+        renderTopUserPanel();
+        loadBoards();
+      }).getMyStatus(currentToken);
+    }
+
+    // 2. 渲染頂部欄位的登入/帳號資訊
+    function renderTopUserPanel() {
+      var panel = document.getElementById('userPanel');
+      if (currentUserId) {
+        panel.innerHTML = `
+          <span>身份: <strong>${escapeHtml(currentUserId)}</strong> (${currentRole})</span>
+          <button class="secondary" onclick="handleLogout()">登出</button>
+        `;
+      } else {
+        panel.innerHTML = `
+          <input type="text" id="loginUserId" placeholder="帳號" style="width: 100px;">
+          <input type="password" id="loginPassword" placeholder="密碼" style="width: 100px;">
+          <button class="btn-primary" onclick="handleLogin()">登入</button>
+          <button class="secondary" onclick="handleRegister()">註冊</button>
+        `;
+      }
+    }
+
+    // 3. 載入看板下拉選單
+    function loadBoards() {
+      google.script.run.withSuccessHandler(function(json) {
+        var boards = [];
+        try { boards = JSON.parse(json || '[]'); } catch (e) { boards = []; }
+
+        var select = document.getElementById('boardSelect');
+        select.innerHTML = '';
+        if (!boards || boards.length === 0) {
+          select.innerHTML = '<option value="">(無可用看板)</option>';
+          document.getElementById('articleList').innerHTML = '<div class="placeholder-msg" style="margin-top: 40px; font-size: 0.9rem;">無權限或無看板</div>';
+          return;
+        }
+
+        boards.forEach(function(b) {
+          var opt = document.createElement('option');
+          opt.value = b.boardId;
+          opt.textContent = b.boardName;
+          select.appendChild(opt);
+        });
+
+        // 深連結：網址帶了 ?board= 就優先選那個看板，否則預設第一個
+        var targetBoardId = bootstrapData.boardId;
+        var matched = targetBoardId && boards.some(function(b) { return b.boardId === targetBoardId; });
+        currentBoardId = matched ? targetBoardId : boards[0].boardId;
+        select.value = currentBoardId;
+
+        loadArticles(currentBoardId);
+
+        // 深連結：網址帶了 ?article= 就直接開啟該篇文章
+        if (bootstrapData.articleId) {
+          selectArticle(bootstrapData.articleId, null);
+        }
+      }).getBoardsFromToken(currentToken);
+    }
+
+    // 切換下拉選單時觸發
+    function onBoardChange() {
+      currentBoardId = document.getElementById('boardSelect').value;
+      currentArticleId = '';
+      document.getElementById('rightPanel').innerHTML = '<div class="placeholder-msg">👈 請從左側點選文章查看內容</div>';
+      loadArticles(currentBoardId);
+    }
+
+    // 4. 載入左側文章列表 (單行高密度 rendering)
+    function loadArticles(boardId) {
+      var listContainer = document.getElementById('articleList');
+      listContainer.innerHTML = '<div class="placeholder-msg" style="margin-top: 40px; font-size: 0.9rem;">載入中...</div>';
+
+      google.script.run.withSuccessHandler(function(json) {
+        var articles = [];
+        try { articles = JSON.parse(json || '[]'); } catch (e) { articles = []; }
+
+        if (articles.length === 0) {
+          listContainer.innerHTML = '<div class="placeholder-msg" style="margin-top: 40px; font-size: 0.9rem;">此看板尚無文章</div>';
+          return;
+        }
+
+        listContainer.innerHTML = '';
+        articles.forEach(function(item) {
+          var div = document.createElement('div');
+          div.className = 'article-item' + (item.articleId === currentArticleId ? ' active' : '');
+          div.onclick = function() {
+            selectArticle(item.articleId, div);
+          };
+          div.innerHTML = `
+            <div class="title" title="${escapeHtml(item.title)}">${escapeHtml(item.title)}</div>
+            <div class="meta">
+              <span>${escapeHtml(item.author)}</span>
+              <span>💬${item.replyCount || 0}</span>
+            </div>
+          `;
+          listContainer.appendChild(div);
+        });
+      }).getArticlesFromToken(currentToken, boardId);
+    }
+
+    // 5. 折疊/展開發文表單切換
+    function togglePostForm() {
+      var form = document.getElementById('postArticleForm');
+      var btn = document.getElementById('btnTogglePost');
+      if (form.style.display === 'none') {
+        form.style.display = 'flex';
+        btn.style.display = 'none';
+      } else {
+        form.style.display = 'none';
+        btn.style.display = 'block';
+      }
+    }
+
+    // 6. 點擊文章標題：右側載入內文與回覆
+    function selectArticle(articleId, elementNode) {
+      currentArticleId = articleId;
+      isEditingArticle = false;
+
+      // 更新左側高亮顯示
+      var items = document.querySelectorAll('.article-item');
+      items.forEach(el => el.classList.remove('active'));
+      if (elementNode) elementNode.classList.add('active');
+
+      loadArticleDetail(articleId);
+    }
+
+    function loadArticleDetail(articleId) {
+      var rightPanel = document.getElementById('rightPanel');
+      rightPanel.innerHTML = '<div class="placeholder-msg">文章載入中...</div>';
+
+      google.script.run.withSuccessHandler(function(json) {
+        var data = null;
+        try { data = JSON.parse(json || 'null'); } catch (e) { data = null; }
+
+        if (!data || !data.article) {
+          rightPanel.innerHTML = '<div class="placeholder-msg">文章不存在或已被刪除</div>';
+          return;
+        }
+
+        lastArticleDetail = data;
+        renderArticleDetail(data);
+      }).getArticleDetailFromToken(currentToken, articleId);
+    }
+
+    // 6b. 實際組裝右側文章詳情 HTML（含檢視 / 編輯兩種模式）
+    function renderArticleDetail(data) {
+      var article = data.article;
+      var replies = data.replies || [];
+      var canManageArticle = (currentRole === 'admin' || article.author === currentUserId);
+      var canDeleteReply = (currentRole === 'admin');
+      var rightPanel = document.getElementById('rightPanel');
+
+      var headerHtml;
+      if (isEditingArticle) {
+        headerHtml = `
+          <input type="text" id="editArticleTitle" value="${escapeHtml(article.title)}"
+            style="width:100%; font-size:1.3rem; font-weight:bold; margin-bottom:8px; padding:6px; border:1px solid #cbd5e1; border-radius:4px;">
+          <textarea id="editArticleContent" style="width:100%; height:140px; padding:8px; border:1px solid #cbd5e1; border-radius:4px; margin-bottom:8px;">${escapeHtml(article.content)}</textarea>
+          <div style="display:flex; gap:8px;">
+            <button class="btn-primary" onclick="handleSaveEditArticle('${article.articleId}')">儲存</button>
+            <button class="secondary" onclick="handleCancelEditArticle()">取消</button>
+          </div>
+        `;
+      } else {
+        headerHtml = `
+          <div class="header-title" style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
+            <span>${escapeHtml(article.title)}</span>
+            <div style="display:flex; gap:6px; flex-shrink:0;">
+              <button class="secondary" style="font-size:0.75rem; padding:4px 10px;" onclick="handleShareArticle('${article.boardId}','${article.articleId}')">🔗 分享</button>
+              ${canManageArticle ? `<button class="secondary" style="font-size:0.75rem; padding:4px 10px;" onclick="handleStartEditArticle()">✏️ 編輯</button>` : ''}
+              ${canManageArticle ? `<button class="secondary" style="font-size:0.75rem; padding:4px 10px;" onclick="handleDeleteArticle('${article.articleId}')">🗑 刪除</button>` : ''}
+            </div>
+          </div>
+          <div class="header-meta">
+            作者：<strong>${escapeHtml(article.author)}</strong> | 發布時間：${escapeHtml(article.createdAt)}
+            ${article.editedAt ? ' | (已編輯於 ' + escapeHtml(article.editedAt) + ')' : ''}
+          </div>
+          <div class="body-content">${escapeHtml(article.content)}</div>
+        `;
+      }
+
+      var html = `<div class="article-detail-card">${headerHtml}</div>`;
+
+      html += `
+        <div class="replies-section">
+          <h4>最新回覆 (${replies.length})</h4>
+          <div id="replyItems">
+      `;
+
+      if (replies.length === 0) {
+        html += '<div style="color: #94a3b8; font-size: 0.9rem;">尚無回覆，成為第一個留言的人吧！</div>';
+      } else {
+        replies.forEach(function(r) {
+          html += `
+            <div class="reply-item">
+              <div class="reply-meta" style="display:flex; justify-content:space-between; align-items:center;">
+                <span>${escapeHtml(r.author)} • ${escapeHtml(r.createdAt)}</span>
+                ${canDeleteReply ? `<span style="cursor:pointer; color:#dc2626; font-size:0.75rem;" onclick="handleDeleteReply('${article.articleId}','${r.replyId}')">🗑 刪除</span>` : ''}
+              </div>
+              <div class="reply-content">${escapeHtml(r.content)}</div>
+            </div>
+          `;
+        });
+      }
+
+      html += `
+          </div>
+        </div>
+
+        <div class="post-reply-form">
+          <h4>撰寫回覆</h4>
+          <textarea id="replyContentInput" placeholder="輸入回覆內容..."></textarea>
+          <div>
+            <button class="btn-primary" onclick="handlePostReply()">送出回覆</button>
+          </div>
+        </div>
+      `;
+
+      rightPanel.innerHTML = html;
+    }
+
+    // 7. 動作處理：登入 / 註冊 / 登出 / 發文 / 回覆
+    function handleLogin() {
+      var u = document.getElementById('loginUserId').value;
+      var p = document.getElementById('loginPassword').value;
+      google.script.run.withSuccessHandler(function(res) {
+        if (res.success) {
+          currentToken = res.token;
+          sessionStorage.setItem('bbs_token', currentToken);
+          checkUserStatus();
+        } else {
+          alert('登入失敗: ' + res.error);
+        }
+      }).loginFromForm(u, p);
+    }
+
+    function handleRegister() {
+      var u = document.getElementById('loginUserId').value;
+      var p = document.getElementById('loginPassword').value;
+      google.script.run.withSuccessHandler(function(res) {
+        if (res.success) {
+          alert('註冊成功！請重新點擊登入。');
+        } else {
+          alert('註冊失敗: ' + res.error);
+        }
+      }).registerUserFromForm(u, p);
+    }
+
+    function handleLogout() {
+      google.script.run.withSuccessHandler(function() {
+        currentToken = '';
+        sessionStorage.removeItem('bbs_token');
+        checkUserStatus();
+      }).logoutFromForm(currentToken);
+    }
+
+    function handlePostArticle() {
+      var title = document.getElementById('newArticleTitle').value;
+      var content = document.getElementById('newArticleContent').value;
+      if (!title || !content) { alert('請填寫標題與內容'); return; }
+
+      google.script.run.withSuccessHandler(function(res) {
+        if (res.success) {
+          document.getElementById('newArticleTitle').value = '';
+          document.getElementById('newArticleContent').value = '';
+          togglePostForm(); // 發文後自動收合表單
+          loadArticles(currentBoardId);
+        } else {
+          alert('發文失敗: ' + res.error);
+        }
+      }).postArticleFromForm(currentToken, currentBoardId, title, content);
+    }
+
+    function handlePostReply() {
+      var content = document.getElementById('replyContentInput').value;
+      if (!content) { alert('請輸入回覆內容'); return; }
+
+      google.script.run.withSuccessHandler(function(res) {
+        if (res.success) {
+          selectArticle(currentArticleId, null);
+        } else {
+          alert('回覆失敗: ' + res.error);
+        }
+      }).postReplyFromForm(currentToken, currentArticleId, content);
+    }
+
+    // 8. 刪除文章 / 刪除留言（顯示與否已在 renderArticleDetail 依權限判斷）
+    function handleDeleteArticle(articleId) {
+      if (!confirm('確定要刪除這篇文章嗎？留言也會一併刪除，此動作無法復原。')) return;
+
+      google.script.run.withSuccessHandler(function(res) {
+        if (res.success) {
+          currentArticleId = '';
+          document.getElementById('rightPanel').innerHTML = '<div class="placeholder-msg">👈 請從左側點選文章查看內容</div>';
+          loadArticles(currentBoardId); // 重新整理左側文章列表
+        } else {
+          alert('刪除失敗: ' + res.error);
+        }
+      }).deleteArticleFromForm(currentToken, articleId);
+    }
+
+    function handleDeleteReply(articleId, replyId) {
+      if (!confirm('確定要刪除這則回覆嗎？此動作無法復原。')) return;
+
+      google.script.run.withSuccessHandler(function(res) {
+        if (res.success) {
+          selectArticle(articleId, null); // 重新載入文章詳情，回覆數跟列表會一起更新
+        } else {
+          alert('刪除失敗: ' + res.error);
+        }
+      }).deleteReplyFromForm(currentToken, articleId, replyId);
+    }
+
+    // 9. 編輯文章（擁有者或 admin）
+    function handleStartEditArticle() {
+      isEditingArticle = true;
+      renderArticleDetail(lastArticleDetail);
+    }
+
+    function handleCancelEditArticle() {
+      isEditingArticle = false;
+      renderArticleDetail(lastArticleDetail);
+    }
+
+    function handleSaveEditArticle(articleId) {
+      var title = document.getElementById('editArticleTitle').value;
+      var content = document.getElementById('editArticleContent').value;
+      if (!title || !content) { alert('請填寫標題與內容'); return; }
+
+      google.script.run.withSuccessHandler(function(res) {
+        if (res.success) {
+          isEditingArticle = false;
+          loadArticleDetail(articleId);   // 重新抓取最新內容（含 editedAt / editedBy）
+          loadArticles(currentBoardId);   // 左側列表的標題也同步更新
+        } else {
+          alert('儲存失敗: ' + res.error);
+        }
+      }).editArticleFromForm(currentToken, articleId, title, content);
+    }
+
+    // 10. 分享文章連結（任何看得到這篇文章的人都能分享；對方打開時仍會走一樣的權限檢查）
+    function handleShareArticle(boardId, articleId) {
+  var link = scriptBaseUrl + '?board=' + encodeURIComponent(boardId) + '&article=' + encodeURIComponent(articleId);
+  prompt('複製下面的連結分享（沒有觀看權限的人打開會看不到內容）：', link);
+}
+
+    // 工具函式：跳脫 HTML 避免 XSS
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+  </script>
+</body>
+</html>
