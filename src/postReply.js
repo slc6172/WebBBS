@@ -6,9 +6,14 @@
  */
 var _permissionsModule = (typeof require !== 'undefined') ? require('./permissions') : null;
 var _postArticleModule = (typeof require !== 'undefined') ? require('./postArticle') : null;
+var _userStatsModule = (typeof require !== 'undefined') ? require('./userStats') : null;
 
 function gateByRoleFor_(role, allowedRoles) {
   return (_permissionsModule ? _permissionsModule.gateByRole : gateByRole)(role, allowedRoles);
+}
+
+function incrementUserStatFor_(usersSheet, userId, statName, delta) {
+  return (_userStatsModule ? _userStatsModule.incrementUserStat : incrementUserStat)(usersSheet, userId, statName, delta);
 }
 
 function validateArticleContentFor_(content) {
@@ -72,6 +77,8 @@ function createReply(spreadsheet, lock, input) {
     var replyCountCell = articlesSheet.getRange(articleRow, 9, 1, 1);
     var currentCount = replyCountCell.getValues()[0][0];
     replyCountCell.setValues([[currentCount + 1]]);
+
+    incrementUserStatFor_(spreadsheet.getSheetByName('Users'), input.author, 'replyCount', 1);
 
     return { success: true };
   } finally {

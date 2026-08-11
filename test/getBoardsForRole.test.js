@@ -13,7 +13,7 @@ test('getBoardsForRole returns the board list when role passes the gate', () => 
   seedBoards(ss, [['gossip', '八卦板', '閒聊', 1]]);
 
   expect(getBoardsForRole(ss, 'user')).toEqual([
-    { boardId: 'gossip', boardName: '八卦板', description: '閒聊', sortOrder: 1 }
+    { boardId: 'gossip', boardName: '八卦板', description: '閒聊', sortOrder: 1, latestArticleAt: '', latestReplyAt: '' }
   ]);
 });
 

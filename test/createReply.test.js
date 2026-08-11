@@ -71,6 +71,19 @@ test('createReply rejects invalid (empty) content and neither writes a row nor i
   expect(replyCount).toBe(0);
 });
 
+test('createReply increments the author\'s replyCount in Users (optimization ticket 08)', () => {
+  const ss = createFakeSpreadsheet();
+  ensureSchema(ss);
+  seedArticle(ss.getSheetByName('Articles'), {});
+  ss.getSheetByName('Users').appendRow(['bob02', 'h', 's', 'user', "'2026/07/01 00:00:00", 0, '', 0, 5]);
+  const lock = createFakeLock();
+
+  createReply(ss, lock, makeInput({ author: 'bob02' }));
+
+  const userRow = ss.getSheetByName('Users').getRange(2, 1, 1, 9).getValues()[0];
+  expect(userRow[8]).toBe(6); // replyCount 5 -> 6
+});
+
 test('createReply rejects a reply to a nonexistent article and does not write any row', () => {
   const ss = createFakeSpreadsheet();
   ensureSchema(ss);

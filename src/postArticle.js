@@ -2,9 +2,14 @@
  * Ticket 07 — posting an article.
  */
 var _permissionsModule = (typeof require !== 'undefined') ? require('./permissions') : null;
+var _userStatsModule = (typeof require !== 'undefined') ? require('./userStats') : null;
 
 function gateByRoleFor_(role, allowedRoles) {
   return (_permissionsModule ? _permissionsModule.gateByRole : gateByRole)(role, allowedRoles);
+}
+
+function incrementUserStatFor_(usersSheet, userId, statName, delta) {
+  return (_userStatsModule ? _userStatsModule.incrementUserStat : incrementUserStat)(usersSheet, userId, statName, delta);
 }
 
 var ARTICLE_TITLE_MAX_LENGTH = 100;
@@ -74,6 +79,7 @@ function createArticle(spreadsheet, lock, input) {
   lock.waitLock(10000);
   try {
     var sheet = spreadsheet.getSheetByName('Articles');
+    var imageUrls = input.imageUrls || [];
     sheet.appendRow([
       input.articleId,
       input.boardId,
@@ -83,8 +89,12 @@ function createArticle(spreadsheet, lock, input) {
       "'" + input.createdAt,
       '',
       '',
-      0
+      0,
+      imageUrls[0] || '',
+      imageUrls[1] || '',
+      imageUrls[2] || ''
     ]);
+    incrementUserStatFor_(spreadsheet.getSheetByName('Users'), input.author, 'articleCount', 1);
     return { success: true };
   } finally {
     lock.releaseLock();

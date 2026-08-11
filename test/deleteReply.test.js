@@ -35,6 +35,20 @@ test('deleteReply removes the reply row and decrements the article replyCount, w
   expect(replyCount).toBe(1);
 });
 
+test('deleteReply decrements the reply author\'s replyCount in Users (optimization ticket 08)', () => {
+  const ss = createFakeSpreadsheet();
+  ensureSchema(ss);
+  seedArticle(ss.getSheetByName('Articles'), {});
+  seedReply(ss.getSheetByName('Replies'), { replyId: 'r1', author: 'bob02' });
+  ss.getSheetByName('Users').appendRow(['bob02', 'h', 's', 'user', "'2026/07/01 00:00:00", 0, '', 0, 5]);
+  const lock = createFakeLock();
+
+  deleteReply(ss, lock, 'a1', 'r1');
+
+  const userRow = ss.getSheetByName('Users').getRange(2, 1, 1, 9).getValues()[0];
+  expect(userRow[8]).toBe(4); // replyCount 5 -> 4
+});
+
 test('deleteReply rejects deleting a nonexistent reply and leaves replyCount unchanged', () => {
   const ss = createFakeSpreadsheet();
   ensureSchema(ss);

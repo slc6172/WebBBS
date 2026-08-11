@@ -12,10 +12,13 @@ function seedArticle(sheet, overrides) {
     createdAt: '2026/07/30 12:00:00',
     editedAt: '',
     editedBy: '',
-    replyCount: 0
+    replyCount: 0,
+    imageUrl1: '',
+    imageUrl2: '',
+    imageUrl3: ''
   };
   var a = Object.assign({}, defaults, overrides);
-  sheet.appendRow([a.articleId, a.boardId, a.title, a.author, a.content, a.createdAt, a.editedAt, a.editedBy, a.replyCount]);
+  sheet.appendRow([a.articleId, a.boardId, a.title, a.author, a.content, a.createdAt, a.editedAt, a.editedBy, a.replyCount, a.imageUrl1, a.imageUrl2, a.imageUrl3]);
 }
 
 test('getArticleById returns the full article including content', () => {
@@ -31,7 +34,10 @@ test('getArticleById returns the full article including content', () => {
     content: '完整內文',
     createdAt: '2026/07/30 12:00:00',
     editedAt: '',
-    editedBy: ''
+    editedBy: '',
+    imageUrl1: '',
+    imageUrl2: '',
+    imageUrl3: ''
   });
 });
 
@@ -47,6 +53,22 @@ test('getArticleById includes editedAt/editedBy for an article that has been edi
 
   expect(result.editedAt).toBe('2026/07/30 18:00:00');
   expect(result.editedBy).toBe('alice01');
+});
+
+test('getArticleById includes populated image URLs (optimization ticket 09)', () => {
+  const ss = createFakeSpreadsheet();
+  ensureSchema(ss);
+  seedArticle(ss.getSheetByName('Articles'), {
+    imageUrl1: 'https://drive.example.com/file/1',
+    imageUrl2: 'https://drive.example.com/file/2'
+    // imageUrl3 left blank — only 2 of the 3 slots used
+  });
+
+  const result = getArticleById(ss, 'a1');
+
+  expect(result.imageUrl1).toBe('https://drive.example.com/file/1');
+  expect(result.imageUrl2).toBe('https://drive.example.com/file/2');
+  expect(result.imageUrl3).toBe('');
 });
 
 test('getArticleById returns null when no article matches the id', () => {

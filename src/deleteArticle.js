@@ -2,45 +2,66 @@
  * Ticket 11 — deleting your own article (cascades to its replies).
  */
 var _permissionsModule = (typeof require !== 'undefined') ? require('./permissions') : null;
+var _userStatsModule = (typeof require !== 'undefined') ? require('./userStats') : null;
+var _imageStorageModule = (typeof require !== 'undefined') ? require('./imageStorage') : null;
 
 function gateByRoleFor_(role, allowedRoles) {
   return (_permissionsModule ? _permissionsModule.gateByRole : gateByRole)(role, allowedRoles);
 }
 
+function incrementUserStatFor_(usersSheet, userId, statName, delta) {
+  return (_userStatsModule ? _userStatsModule.incrementUserStat : incrementUserStat)(usersSheet, userId, statName, delta);
+}
+
+function extractFileIdFromUrlFor_(url) {
+  return (_imageStorageModule ? _imageStorageModule.extractFileIdFromUrl : extractFileIdFromUrl)(url);
+}
+
+function deleteArticleImageFor_(drive, fileId) {
+  return (_imageStorageModule ? _imageStorageModule.deleteArticleImage : deleteArticleImage)(drive, fileId);
+}
+
 /**
- * Finds the row number and current author for an articleId, or null.
+ * Finds the row number, author, and image URLs for an articleId, or null.
+ * 優化輪 ticket 10：多帶出 imageUrl1~3，刪除文章時才知道要一併清掉哪些 Drive 檔案。
  */
 function findArticleRowAndAuthor_(sheet, articleId) {
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) {
     return null;
   }
-  var rows = sheet.getRange(2, 1, lastRow - 1, 4).getValues(); // A=articleId, D=author
+  var rows = sheet.getRange(2, 1, lastRow - 1, 12).getValues();
   for (var i = 0; i < rows.length; i++) {
     if (rows[i][0] === articleId) {
-      return { rowNumber: i + 2, author: rows[i][3] };
+      return {
+        rowNumber: i + 2,
+        author: rows[i][3],
+        imageUrls: [rows[i][9], rows[i][10], rows[i][11]].filter(function (u) { return u; })
+      };
     }
   }
   return null;
 }
 
 /**
- * Finds every row number in a Replies-shaped sheet belonging to
- * articleId, in ascending row order.
+ * Finds every row (row number + author) in a Replies-shaped sheet
+ * belonging to articleId, in ascending row order.
+ * 優化輪 ticket 08：多帶出 author，這篇文章連帶刪除的每則回覆，要分別扣
+ * 各自作者的 replyCount（不是全部算在文章作者頭上）。
  */
-function findReplyRowNumbers_(sheet, articleId) {
+function findReplyRowsAndAuthors_(sheet, articleId) {
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) {
     return [];
   }
-  var rows = sheet.getRange(2, 1, lastRow - 1, 2).getValues(); // A=replyId, B=articleId
-  var rowNumbers = [];
+  var rows = sheet.getRange(2, 1, lastRow - 1, 3).getValues(); // A=replyId, B=articleId, C=author
+  var result = [];
   for (var i = 0; i < rows.length; i++) {
     if (rows[i][1] === articleId) {
-      rowNumbers.push(i + 2);
+      result.push({ rowNumber: i + 2, author: rows[i][2] });
     }
   }
-  return rowNumbers;
+  return result;
 }
 
 /**
@@ -56,9 +77,12 @@ function findReplyRowNumbers_(sheet, articleId) {
  * @param {string} articleId
  * @param {boolean} [isAdmin] - when true, skips the author===requestingUserId
  *   check (ticket 12).
+ * @param {Drive} [drive] - 優化輪 ticket 10：注入的 drive 介面，用來刪除這篇
+ *   文章附加的 Drive 圖片檔案。文章沒有任何圖片時完全不會用到，可以省略
+ *   （沒有圖片可刪時傳 undefined 是安全的）。
  * @returns {{success: boolean, error?: string}}
  */
-function deleteArticle(spreadsheet, lock, requestingUserId, articleId, isAdmin) {
+function deleteArticle(spreadsheet, lock, requestingUserId, articleId, isAdmin, drive) {
   lock.waitLock(10000);
   try {
     var articlesSheet = spreadsheet.getSheetByName('Articles');
@@ -71,11 +95,20 @@ function deleteArticle(spreadsheet, lock, requestingUserId, articleId, isAdmin) 
     }
 
     articlesSheet.deleteRow(found.rowNumber);
+    incrementUserStatFor_(spreadsheet.getSheetByName('Users'), found.author, 'articleCount', -1);
+
+    found.imageUrls.forEach(function (url) {
+      var fileId = extractFileIdFromUrlFor_(url);
+      if (fileId) {
+        deleteArticleImageFor_(drive, fileId);
+      }
+    });
 
     var repliesSheet = spreadsheet.getSheetByName('Replies');
-    var replyRowNumbers = findReplyRowNumbers_(repliesSheet, articleId);
-    for (var i = replyRowNumbers.length - 1; i >= 0; i--) {
-      repliesSheet.deleteRow(replyRowNumbers[i]);
+    var replyRows = findReplyRowsAndAuthors_(repliesSheet, articleId);
+    for (var i = replyRows.length - 1; i >= 0; i--) {
+      repliesSheet.deleteRow(replyRows[i].rowNumber);
+      incrementUserStatFor_(spreadsheet.getSheetByName('Users'), replyRows[i].author, 'replyCount', -1);
     }
 
     return { success: true };
@@ -88,11 +121,11 @@ function deleteArticle(spreadsheet, lock, requestingUserId, articleId, isAdmin) 
  * Only role=user/admin may delete at all; the ownership check inside
  * deleteArticle still applies on top of this.
  */
-function deleteArticleForRole(spreadsheet, lock, role, requestingUserId, articleId) {
+function deleteArticleForRole(spreadsheet, lock, role, requestingUserId, articleId, drive) {
   if (!gateByRoleFor_(role, ['user', 'admin'])) {
     return { success: false, error: '權限不足' };
   }
-  return deleteArticle(spreadsheet, lock, requestingUserId, articleId, role === 'admin');
+  return deleteArticle(spreadsheet, lock, requestingUserId, articleId, role === 'admin', drive);
 }
 
 if (typeof module !== 'undefined' && module.exports) {

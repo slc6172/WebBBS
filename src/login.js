@@ -35,13 +35,20 @@ var SESSION_TTL_SECONDS = 21600; // 6 hours — also CacheService's own max TTL
 /**
  * Reads a Users-shaped sheet row into a plain record, or null if no
  * matching userId is found. Skips the header row.
+ *
+ * 優化輪 ticket 07：也讀出 loginCount/lastLoginAt（新使用者/尚未跑過這次優化
+ * 遷移的舊資料列，這兩欄是空字串，正規化成 0 / ''）以及 row_（1-indexed 的
+ * 實際列號），login() 需要這個列號才能把新的登入統計寫回同一列。
+ * 看板新內容提示功能：也讀出 lastSeenBoards（第 10 欄，JSON 字串原樣讀出，
+ * 空字串代表「從沒進去過任何看板」，解析成物件是 boardActivity.js 的工作，
+ * 不是這裡）。
  */
 function getUserRecord_(sheet, userId) {
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) {
     return null;
   }
-  var rows = sheet.getRange(2, 1, lastRow - 1, 5).getValues();
+  var rows = sheet.getRange(2, 1, lastRow - 1, 10).getValues();
   for (var i = 0; i < rows.length; i++) {
     if (rows[i][0] === userId) {
       return {
@@ -49,7 +56,11 @@ function getUserRecord_(sheet, userId) {
         passwordHash: rows[i][1],
         salt: rows[i][2],
         role: rows[i][3],
-        createdAt: rows[i][4]
+        createdAt: rows[i][4],
+        loginCount: rows[i][5] || 0,
+        lastLoginAt: rows[i][6] || '',
+        lastSeenBoards: rows[i][9] || '',
+        row_: i + 2
       };
     }
   }
@@ -61,10 +72,15 @@ function getUserRecord_(sheet, userId) {
  * @param {Cache} cache - e.g. CacheService.getScriptCache()
  * @param {function(): string} tokenGenerator - e.g. Utilities.getUuid
  * @param {function(string): number[]} digestFn
+ * @param {string} nowTimestamp - 由呼叫端（GAS 環境）用 Utilities.formatDate 產生好傳進來，
+ *   保持這支函式本身不碰真實時鐘、好測試（比照 register.js 的 createdAt 慣例）
  * @param {{userId: string, password: string}} input
- * @returns {{success: boolean, token?: string, error?: string}}
+ * @returns {{success: boolean, token?: string, loginCount?: number, lastLoginAt?: string, error?: string}}
+ *   loginCount 是「這次登入算進去之後」的總數（第一次登入回傳 1）；
+ *   lastLoginAt 是「這次登入之前」最後一次登入的時間（第一次登入回傳空字串，
+ *   代表尚無記錄——這兩個刻意錯開一格，前端才顯示得出「上一次」是什麼時候）。
  */
-function login(spreadsheet, cache, tokenGenerator, digestFn, input) {
+function login(spreadsheet, cache, tokenGenerator, digestFn, nowTimestamp, input) {
   var failKey = LOGIN_FAIL_PREFIX + input.userId;
   var currentFailCount = parseInt(cache.get(failKey) || '0', 10);
 
@@ -81,10 +97,23 @@ function login(spreadsheet, cache, tokenGenerator, digestFn, input) {
     return { success: false, error: 'userId 或密碼錯誤' };
   }
 
+  var previousLoginCount = record.loginCount || 0;
+  var previousLastLoginAt = record.lastLoginAt || '';
+  var newLoginCount = previousLoginCount + 1;
+
+  // 寫回新的登入次數/登入時間。刻意不上鎖：純顯示用統計，不影響權限判斷，
+  // 極端併發下少算一次也只是小小的顯示誤差（見 spec 的取捨說明）。
+  sheet.getRange(record.row_, 6, 1, 2).setValues([[newLoginCount, "'" + nowTimestamp]]);
+
   var token = tokenGenerator();
   cache.remove(failKey);
   cache.put(SESSION_PREFIX + token, input.userId, SESSION_TTL_SECONDS);
-  return { success: true, token: token };
+  return {
+    success: true,
+    token: token,
+    loginCount: newLoginCount,
+    lastLoginAt: previousLastLoginAt
+  };
 }
 
 if (typeof module !== 'undefined' && module.exports) {

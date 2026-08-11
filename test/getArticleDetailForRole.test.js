@@ -27,7 +27,7 @@ test('getArticleDetailForRole returns the article and its replies when role pass
 
   expect(result.article).toEqual({
     articleId: 'a1', boardId: 'gossip', title: '標題', author: 'alice01', content: '內文', createdAt: '2026/07/30 12:00:00',
-    editedAt: '', editedBy: ''
+    editedAt: '', editedBy: '', imageUrl1: '', imageUrl2: '', imageUrl3: ''
   });
   expect(result.replies).toEqual([
     { replyId: 'r1', articleId: 'a1', author: 'bob02', content: '推!', createdAt: '2026/07/30 13:00:00' }

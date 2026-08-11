@@ -10,10 +10,11 @@ function gateByRoleFor_(role, allowedRoles) {
 /**
  * Reads a single article's full record, including content (unlike
  * ticket 06's listArticlesByBoard, which deliberately skips it), plus
- * editedAt/editedBy for the "edited" badge.
+ * editedAt/editedBy for the "edited" badge and imageUrl1~3 (optimization
+ * ticket 09) for the below-content thumbnails.
  * @param {Spreadsheet} spreadsheet
  * @param {string} articleId
- * @returns {{articleId: string, boardId: string, title: string, author: string, content: string, createdAt: string, editedAt: string, editedBy: string}|null}
+ * @returns {{articleId: string, boardId: string, title: string, author: string, content: string, createdAt: string, editedAt: string, editedBy: string, imageUrl1: string, imageUrl2: string, imageUrl3: string}|null}
  */
 function getArticleById(spreadsheet, articleId) {
   var sheet = spreadsheet.getSheetByName('Articles');
@@ -21,7 +22,7 @@ function getArticleById(spreadsheet, articleId) {
   if (lastRow < 2) {
     return null;
   }
-  var rows = sheet.getRange(2, 1, lastRow - 1, 8).getValues();
+  var rows = sheet.getRange(2, 1, lastRow - 1, 12).getValues();
   for (var i = 0; i < rows.length; i++) {
     if (rows[i][0] === articleId) {
       return {
@@ -32,7 +33,10 @@ function getArticleById(spreadsheet, articleId) {
         content: rows[i][4],
         createdAt: rows[i][5],
         editedAt: rows[i][6],
-        editedBy: rows[i][7]
+        editedBy: rows[i][7],
+        imageUrl1: rows[i][9] || '',
+        imageUrl2: rows[i][10] || '',
+        imageUrl3: rows[i][11] || ''
       };
     }
   }

@@ -33,6 +33,7 @@
       padding: 0 20px;
       flex-shrink: 0;
       box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      position: relative; /* .mobile-more-menu 用 position:absolute 定位，需要這裡當定位基準 */
     }
     .top-bar .logo {
       font-size: 1.2rem;
@@ -69,6 +70,8 @@
       padding: 12px;
       background-color: #ffffff;
       gap: 8px;
+      overflow-y: auto; /* 保險：main-container 是固定高度 + overflow:hidden，內容一旦超高，
+                            沒有這個會被直接裁掉、完全碰不到，不是被擋住而已 */
     }
 
     .board-selector-box {
@@ -267,6 +270,363 @@
       margin-top: 100px;
       font-size: 1.1rem;
     }
+
+    /* 響應式：手機版單畫面導覽 (斷點 768px，見 ticket 01) */
+    .mobile-back-btn {
+      display: none;
+      margin-bottom: 12px;
+      background: none;
+      border: none;
+      color: #2563eb;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      padding: 4px 0;
+    }
+
+    /* ---- ticket 02：手機版頂列「⋯」選單 ---- */
+    /* 這條規則必須放在下面的 @media 區塊「之前」——兩條規則優先權(specificity)一樣，
+       CSS 是「後面的贏」，如果這條放在 @media 後面，會把 @media 裡想要顯示它的
+       規則蓋掉，導致手機版永遠看不到「⋯」按鈕（這正是這次回報的 bug 的根本原因）。 */
+    .mobile-more-btn {
+      display: none; /* 桌面版一律不顯示，下方 media query 在手機寬度會覆蓋成 inline-flex */
+      background: none;
+      border: 1px solid rgba(255,255,255,0.4);
+      color: #fff;
+      border-radius: 4px;
+      padding: 2px 8px;
+      font-size: 1rem;
+      cursor: pointer;
+    }
+
+    @media (max-width: 767px) {
+      .left-panel {
+        width: 100%;
+        min-width: 0;
+        border-right: none;
+      }
+      .right-panel {
+        width: 100%;
+      }
+      /* body 上的 mobile-list / mobile-detail / mobile-compose class 由 JS 依導覽狀態切換，
+         桌面版（無這些 class）完全不受影響 */
+      body.mobile-list .right-panel { display: none; }
+      body.mobile-detail .left-panel { display: none; }
+      body.mobile-detail .mobile-back-btn { display: inline-block; }
+
+      /* ticket 02：手機版改用浮動 ➕ + 全螢幕發文頁，隱藏舊的內嵌折疊發文區 */
+      #btnTogglePost, #postArticleForm { display: none !important; }
+
+      .mobile-fab { display: none; }
+      body.mobile-list .mobile-fab,
+      body.mobile-detail .mobile-fab { display: flex; }
+
+      .mobile-more-btn { display: inline-flex; }
+    }
+
+    /* ---- ticket 02：手機版浮動發文按鈕 ---- */
+    .mobile-fab {
+      display: none; /* 桌面版一律不顯示，見上方 media query */
+      position: fixed;
+      right: 20px;
+      bottom: 24px;
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      background-color: #2563eb;
+      color: #fff;
+      border: none;
+      font-size: 1.8rem;
+      line-height: 1;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.25);
+      cursor: pointer;
+      z-index: 20;
+    }
+    .mobile-fab:hover { background-color: #1d4ed8; }
+
+    .mobile-more-menu {
+      display: none;
+      position: absolute;
+      top: 100%;
+      right: 12px;
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+      min-width: 180px;
+      z-index: 30;
+      overflow: hidden;
+    }
+    .mobile-more-menu.open { display: block; }
+    .mobile-more-menu .mobile-more-item {
+      display: block;
+      width: 100%;
+      text-align: left;
+      padding: 10px 14px;
+      background: none;
+      border: none;
+      border-bottom: 1px solid #f1f5f9;
+      font-size: 0.9rem;
+      color: #1e293b;
+      cursor: pointer;
+    }
+    .mobile-more-menu .mobile-more-item:last-child { border-bottom: none; }
+    .mobile-more-menu .mobile-more-info {
+      display: block;
+      width: 100%;
+      padding: 10px 14px;
+      font-size: 0.85rem;
+      color: #64748b;
+      border-bottom: 1px solid #f1f5f9;
+    }
+    .mobile-more-menu .mobile-more-empty {
+      padding: 10px 14px;
+      font-size: 0.85rem;
+      color: #94a3b8;
+    }
+
+    /* ---- ticket 02：手機版全螢幕發文頁 ---- */
+    .mobile-compose-screen {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: #ffffff;
+      z-index: 40;
+      flex-direction: column;
+    }
+    body.mobile-compose .main-container { display: none; }
+    body.mobile-compose .mobile-compose-screen { display: flex; }
+    .mobile-compose-header {
+      height: 50px;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 16px;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    .mobile-compose-header .mobile-back-btn { display: inline-block; margin-bottom: 0; }
+    .mobile-compose-header h3 { margin: 0; font-size: 1.05rem; color: #1e293b; }
+    .mobile-compose-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .mobile-compose-body input,
+    .mobile-compose-body textarea {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      font-size: 0.95rem;
+    }
+    .mobile-compose-body textarea { flex: 1; min-height: 200px; resize: none; }
+
+    /* ---- ticket 06：看板列表彈窗 ---- */
+    .board-selector-box { display: flex; align-items: center; gap: 8px; }
+    .board-list-btn {
+      background: none;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      padding: 2px 8px;
+      font-size: 0.95rem;
+      cursor: pointer;
+      color: #334155;
+    }
+    @media (max-width: 767px) {
+      /* 手機版收進「⋯」選單，見 registerMoreMenuItem，避免跟下拉選單旁的按鈕重複 */
+      .board-list-btn { display: none; }
+      /* ticket 07：登入統計同理，手機版只在「⋯」選單裡顯示一次，不跟頂列重複 */
+      .login-stats-badge { display: none; }
+      /* ticket 08：排行榜按鈕同理 */
+      .leaderboard-btn { display: none !important; }
+    }
+    .login-stats-badge {
+      font-size: 0.85rem;
+      color: rgba(255,255,255,0.85);
+    }
+    .leaderboard-btn {
+      background: none;
+      border: 1px solid rgba(255,255,255,0.4);
+      color: #fff;
+      border-radius: 4px;
+      padding: 3px 10px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      margin-left: 10px;
+    }
+    .board-list-popup {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.45);
+      z-index: 50;
+      align-items: center;
+      justify-content: center;
+    }
+    .board-list-popup.open { display: flex; }
+    .board-list-popup-content {
+      background: #fff;
+      border-radius: 8px;
+      width: 90%;
+      max-width: 420px;
+      max-height: 70vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .board-list-popup-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 16px;
+      border-bottom: 1px solid #e2e8f0;
+      flex-shrink: 0;
+    }
+    .board-list-popup-header h3 { margin: 0; font-size: 1.05rem; color: #1e293b; }
+    .board-list-popup-close {
+      background: none; border: none; font-size: 1.2rem; cursor: pointer; color: #64748b; line-height: 1;
+    }
+    .board-list-popup-body { overflow-y: auto; padding: 6px 0; }
+    .board-list-popup-item {
+      display: block;
+      width: 100%;
+      text-align: left;
+      background: none;
+      border: none;
+      padding: 10px 16px;
+      cursor: pointer;
+      border-bottom: 1px solid #f1f5f9;
+    }
+    .board-list-popup-item:hover { background: #f8fafc; }
+    .board-list-popup-item .board-name { font-weight: 600; color: #1e293b; }
+    .board-list-popup-item .board-desc { font-size: 0.85rem; color: #64748b; margin-top: 2px; }
+    .board-badge {
+      display: inline-block;
+      background-color: #ef4444;
+      color: #fff;
+      font-size: 0.7rem;
+      font-weight: 700;
+      padding: 1px 6px;
+      border-radius: 10px;
+      margin-left: 4px;
+      vertical-align: middle;
+    }
+
+    /* ---- ticket 08：排行榜彈窗 ---- */
+    .leaderboard-category { padding: 10px 16px; border-bottom: 1px solid #f1f5f9; }
+    .leaderboard-category:last-child { border-bottom: none; }
+    .leaderboard-category h4 { margin: 0 0 6px 0; font-size: 0.95rem; color: #1e293b; }
+    .leaderboard-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 0;
+      font-size: 0.9rem;
+    }
+    .leaderboard-rank { font-weight: 700; color: #2563eb; width: 28px; flex-shrink: 0; }
+    .leaderboard-user { flex: 1; color: #1e293b; }
+    .leaderboard-value { color: #64748b; }
+    .leaderboard-empty { font-size: 0.85rem; color: #94a3b8; }
+
+    /* ---- ticket 09：圖片上傳區塊 ---- */
+    .image-upload-box {
+      border: 1px dashed #cbd5e1;
+      border-radius: 6px;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .image-upload-label { font-size: 0.85rem; color: #475569; }
+    .image-upload-warning { font-size: 0.78rem; color: #b45309; background: #fffbeb; padding: 6px 8px; border-radius: 4px; }
+
+    /* ---- ticket 09：文章下方圖片縮圖 ---- */
+    .article-images {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin: 14px 0;
+    }
+    .article-images img {
+      width: 120px;
+      height: 120px;
+      object-fit: cover;
+      border-radius: 6px;
+      border: 1px solid #e2e8f0;
+      cursor: pointer;
+    }
+
+    /* ---- ticket 10：燈箱 ---- */
+    .lightbox-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.85);
+      z-index: 60;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .lightbox-overlay.open { display: flex; }
+    .lightbox-overlay img {
+      max-width: 100%;
+      max-height: 100%;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .lightbox-close {
+      position: fixed;
+      top: 16px;
+      right: 20px;
+      background: none;
+      border: none;
+      color: #fff;
+      font-size: 1.6rem;
+      cursor: pointer;
+      z-index: 61;
+    }
+
+    /* ---- 修正圖片選擇框排版 ---- */
+    .edit-image-slots {
+      display: flex;
+      gap: 6px; /* 縮小間距（原 8px） */
+      flex-wrap: nowrap; /* 強制不換行 */
+      margin-bottom: 8px;
+      width: 100%;
+    }
+    .edit-image-slot {
+      flex: 1; /* 彈性均分寬度，取代固定 100px */
+      min-width: 0; /* 允許縮小到比內容還窄，不然原生 file input 的最小寬度會撐開整列 */
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      align-items: center;
+    }
+    .edit-image-slot img {
+      width: 100%; /* 寬高隨容器等比例縮放 */
+      aspect-ratio: 1 / 1; /* 維持正方形 */
+      height: auto;
+      object-fit: cover;
+      border-radius: 6px;
+      border: 1px solid #e2e8f0;
+      box-sizing: border-box;
+    }
+    .edit-image-slot input[type="file"] {
+      width: 100%; /* 寬度跟隨容器 */
+      aspect-ratio: 1 / 1; /* 跟已選圖片的格子一致，維持正方形，避免空格/已選格高度不一致 */
+      height: auto;
+      border: 1px dashed #cbd5e1;
+      border-radius: 6px;
+      font-size: 0.7rem;
+      padding: 2px;
+      box-sizing: border-box;
+    }
   </style>
 </head>
 <body>
@@ -274,8 +634,12 @@
   <!-- 1. 最上方固定列 -->
   <header class="top-bar">
     <div class="logo">BBS 討論區</div>
+    <button type="button" class="leaderboard-btn" id="leaderboardBtn" onclick="openLeaderboardPopup()" style="display:none;">🏆 排行榜</button>
     <div class="user-panel" id="userPanel">
       <!-- 登入狀態由 JavaScript 初始化載入 -->
+    </div>
+    <div class="mobile-more-menu" id="mobileMoreMenu">
+      <!-- 內容由 JS 的 registerMoreMenuItem()/renderMoreMenu() 動態產生，見 ticket 06 -->
     </div>
   </header>
 
@@ -290,6 +654,7 @@
         <select id="boardSelect" onchange="onBoardChange()">
           <option value="">載入看板中...</option>
         </select>
+        <button type="button" class="board-list-btn" onclick="openBoardListPopup()" title="看板列表">📋 看板列表</button>
       </div>
 
       <!-- 文章標題列表 (單行高密度) -->
@@ -298,7 +663,7 @@
       </div>
 
       <!-- 折疊式發文按鈕與表單 -->
-      <button class="btn-toggle-post" id="btnTogglePost" onclick="togglePostForm()">+ 發表新文章</button>
+      <button class="btn-toggle-post" id="btnTogglePost" onclick="togglePostForm()" style="display:none;">+ 發表新文章</button>
 
       <div class="post-article-form" id="postArticleForm" style="display: none;">
         <div class="form-header">
@@ -307,6 +672,11 @@
         </div>
         <input type="text" id="newArticleTitle" placeholder="文章標題" />
         <textarea id="newArticleContent" placeholder="撰寫文章內容..."></textarea>
+        <div class="image-upload-box">
+          <label class="image-upload-label">📷 附加圖片（最多 3 張，jpg/png/gif/webp，單張上限 5MB）</label>
+          <div id="newArticleImageSlotsContainer"></div>
+          <div class="image-upload-warning">⚠️ 圖片連結為公開分享連結（知道連結就能看），請勿上傳含敏感內容的圖片</div>
+        </div>
         <button class="btn-primary" onclick="handlePostArticle()">發布文章</button>
       </div>
     </section>
@@ -318,6 +688,55 @@
 
   </main>
 
+  <!-- ticket 02：手機版浮動發文按鈕（list/detail 畫面下皆可點擊） -->
+  <button type="button" class="mobile-fab" id="mobileFabBtn" onclick="openMobileCompose()" title="發表新文章" style="display:none;">+</button>
+
+  <!-- ticket 02：手機版全螢幕發文頁（編輯文章沿用 ticket 01 已經全寬的 detail 畫面，不需要另一個全螢幕頁） -->
+  <section class="mobile-compose-screen" id="mobileComposeScreen">
+    <div class="mobile-compose-header">
+      <button type="button" class="mobile-back-btn" onclick="closeMobileCompose()">← 返回</button>
+      <h3>發表新文章</h3>
+    </div>
+    <div class="mobile-compose-body">
+      <input type="text" id="mobileNewArticleTitle" placeholder="文章標題" />
+      <textarea id="mobileNewArticleContent" placeholder="撰寫文章內容..."></textarea>
+      <div class="image-upload-box">
+        <label class="image-upload-label">📷 附加圖片（最多 3 張，jpg/png/gif/webp，單張上限 5MB）</label>
+        <div id="mobileNewArticleImageSlotsContainer"></div>
+        <div class="image-upload-warning">⚠️ 圖片連結為公開分享連結（知道連結就能看），請勿上傳含敏感內容的圖片</div>
+      </div>
+      <button class="btn-primary" onclick="handleMobilePostArticle()">發布文章</button>
+    </div>
+  </section>
+
+  <!-- ticket 06：看板列表彈窗 -->
+  <div class="board-list-popup" id="boardListPopup" onclick="if (event.target === this) closeBoardListPopup()">
+    <div class="board-list-popup-content">
+      <div class="board-list-popup-header">
+        <h3>所有看板</h3>
+        <button type="button" class="board-list-popup-close" onclick="closeBoardListPopup()">✕</button>
+      </div>
+      <div class="board-list-popup-body" id="boardListPopupBody"></div>
+    </div>
+  </div>
+
+  <!-- ticket 08：排行榜彈窗 -->
+  <div class="board-list-popup" id="leaderboardPopup" onclick="if (event.target === this) closeLeaderboardPopup()">
+    <div class="board-list-popup-content">
+      <div class="board-list-popup-header">
+        <h3>🏆 排行榜</h3>
+        <button type="button" class="board-list-popup-close" onclick="closeLeaderboardPopup()">✕</button>
+      </div>
+      <div class="board-list-popup-body" id="leaderboardPopupBody"></div>
+    </div>
+  </div>
+
+  <!-- ticket 10：圖片燈箱 -->
+  <div class="lightbox-overlay" id="lightboxOverlay" onclick="closeLightbox()">
+    <button type="button" class="lightbox-close" onclick="closeLightbox()">✕</button>
+    <img id="lightboxImage" src="" alt="放大圖片" />
+  </div>
+
   <script>
     // 全域變數狀態
     var bootstrapData = <?!= bootstrapDataJson ?>;   // doGet 解析出的 {boardId?, articleId?}，供分享連結深連結使用
@@ -325,14 +744,242 @@
     var currentToken = sessionStorage.getItem('bbs_token') || '';
     var currentUserId = '';
     var currentRole = '';
+    // 優化輪 ticket 07：登入次數/上次登入時間是「這次登入當下」的快照，存 sessionStorage
+    // 讓同一個分頁重新整理頁面時還能沿用同一份顯示，不會因為重讀網頁就消失或重新查詢
+    var currentLoginCount = sessionStorage.getItem('bbs_login_count') || '';
+    var currentLastLoginAt = sessionStorage.getItem('bbs_last_login_at') || '';
     var currentBoardId = '';
     var currentArticleId = '';
+    var allBoards = []; // ticket 06：loadBoards() 存一份在這裡，看板列表彈窗直接複用，不用另外查詢
     var lastArticleDetail = null;   // 暫存目前顯示中的文章資料，編輯模式切換時不用重打一次 RPC
     var isEditingArticle = false;
+    var editImageSlots = ['', '', '']; // ticket 10：編輯文章時暫存的 3 個圖片格狀態
+
+    // ---- 響應式版面：斷點判斷與導覽狀態 (ticket 01) ----
+    // 這兩個函式刻意寫成純函式（輸入輸出明確、不碰 DOM），方便之後如果要補測試可以直接抽出來用；
+    // 本次照使用者指示先以人工驗收為主，見 MANUAL_VERIFICATION.md。
+    var MOBILE_BREAKPOINT = 768;
+    var navState = { screen: 'list', articleId: null };
+    var viewMode = 'desktop';
+
+    // 純函式：視窗寬度 -> 版面模式（< 768px 為手機版，以視窗寬度即時判斷，不依賴 User-Agent）
+    function getViewMode(width) {
+      return width < MOBILE_BREAKPOINT ? 'mobile' : 'desktop';
+    }
+
+    // 純函式：導覽狀態的 state transition（list -> detail / compose，前進方向用）
+    function applyNavAction(state, action) {
+      switch (action.type) {
+        case 'OPEN_ARTICLE':
+          return { screen: 'detail', articleId: action.articleId };
+        case 'OPEN_COMPOSE':
+          return { screen: 'compose', articleId: null };
+        default:
+          return state;
+      }
+    }
+
+    // 接線：依目前 viewMode + navState 套用對應的 body class
+    // 桌面版（viewMode !== 'mobile'）一律移除這些 class，維持雙欄版面完全不受影響
+    function applyBodyClasses() {
+      document.body.classList.remove('mobile-list', 'mobile-detail', 'mobile-compose');
+      if (viewMode === 'mobile') {
+        document.body.classList.add('mobile-' + navState.screen);
+      }
+      // 每次畫面切換都順手把「⋯」選單收起來，避免切換後選單還開著
+      var moreMenu = document.getElementById('mobileMoreMenu');
+      if (moreMenu) moreMenu.classList.remove('open');
+    }
+
+    function updateViewMode() {
+      viewMode = getViewMode(window.innerWidth);
+      applyBodyClasses();
+    }
+
+    // 手機版「← 返回」按鈕：交給瀏覽器歷史記錄處理，跟手勢/實體返回鍵走同一條路徑（見 popstate 監聽）
+    function backToList() {
+      history.back();
+    }
+
+    // ticket 02：手機版浮動 ➕ 開啟全螢幕發文頁；關閉時一律用 history.back()，
+    // 這樣不管是從 list 還是從 detail 點進來，返回後都會停在原本那個畫面（瀏覽器歷史記錄自然記得），
+    // 不用自己額外記一個「從哪裡進來的」變數
+    function openMobileCompose() {
+      navState = applyNavAction(navState, { type: 'OPEN_COMPOSE' });
+      if (viewMode === 'mobile') {
+        history.pushState({ screen: 'compose' }, '', '');
+      }
+      applyBodyClasses();
+      document.getElementById('mobileNewArticleTitle').value = '';
+      document.getElementById('mobileNewArticleContent').value = '';
+      mobileNewArticleImageSlots = ['', '', ''];
+      renderMobileNewArticleImageSlots();
+    }
+
+    function closeMobileCompose() {
+      history.back();
+    }
+
+    function toggleMoreMenu() {
+      var menu = document.getElementById('mobileMoreMenu');
+      if (menu) menu.classList.toggle('open');
+    }
+
+    // 優化輪 ticket 06 起：「⋯」選單改用登記制——各 ticket 各自呼叫 registerMoreMenuItem()
+    // 掛自己的入口進去，不用互相知道對方存不存在，也不用同時改到同一段陣列/渲染邏輯，
+    // 降低之後平行開發時改到同一塊程式碼互相衝突的風險。
+    // 用 id 做 upsert（同一個 id 再呼叫一次是更新，不是疊加新的一筆）——像登入統計這種
+    // 內容會隨著登入/登出變動的項目，才不會每次重繪都多出一筆重複的舊資料。
+    // onClick 傳 null/undefined 代表這是純資訊列（不能點），例如登入次數。
+    var moreMenuItems = [];
+
+    function registerMoreMenuItem(id, label, onClick) {
+      var existing = moreMenuItems.find(function(i) { return i.id === id; });
+      if (existing) {
+        existing.label = label;
+        existing.onClick = onClick;
+      } else {
+        moreMenuItems.push({ id: id, label: label, onClick: onClick });
+      }
+      renderMoreMenu();
+    }
+
+    // ticket 08：跟 registerMoreMenuItem 成對，某些項目（例如排行榜）只有特定角色
+    // 看得到，角色不符或登出時要能把項目整個移除，不只是換內容
+    function unregisterMoreMenuItem(id) {
+      moreMenuItems = moreMenuItems.filter(function(i) { return i.id !== id; });
+      renderMoreMenu();
+    }
+
+    function renderMoreMenu() {
+      var menu = document.getElementById('mobileMoreMenu');
+      if (!menu) return;
+      if (moreMenuItems.length === 0) {
+        menu.innerHTML = '<div class="mobile-more-empty">更多功能即將推出</div>';
+        return;
+      }
+      menu.innerHTML = '';
+      moreMenuItems.forEach(function(item) {
+        if (!item.onClick) {
+          var info = document.createElement('div');
+          info.className = 'mobile-more-info';
+          info.textContent = item.label;
+          menu.appendChild(info);
+          return;
+        }
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'mobile-more-item';
+        btn.textContent = item.label;
+        btn.onclick = function() {
+          toggleMoreMenu(); // 點了就把選單收起來，再執行實際動作
+          item.onClick();
+        };
+        menu.appendChild(btn);
+      });
+    }
+
+    // ticket 06：看板列表彈窗，桌面版按鈕在下拉選單旁，手機版收進「⋯」選單
+    registerMoreMenuItem('boardList', '📋 看板列表', openBoardListPopup);
+
+    function openBoardListPopup() {
+      renderBoardListPopup();
+      document.getElementById('boardListPopup').classList.add('open');
+    }
+
+    function closeBoardListPopup() {
+      document.getElementById('boardListPopup').classList.remove('open');
+    }
+
+    function renderBoardListPopup() {
+      var body = document.getElementById('boardListPopupBody');
+      if (!allBoards || allBoards.length === 0) {
+        body.innerHTML = '<div class="placeholder-msg" style="margin:20px; font-size:0.9rem;">尚無可用看板</div>';
+        return;
+      }
+      body.innerHTML = '';
+      allBoards.forEach(function(b) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'board-list-popup-item';
+        btn.onclick = function() { selectBoardFromPopup(b.boardId); };
+        var badge = boardBadgeText(b);
+        btn.innerHTML = '<div class="board-name">' + escapeHtml(b.boardName) +
+          (badge ? ' <span class="board-badge">' + escapeHtml(badge) + '</span>' : '') + '</div>' +
+          (b.description ? '<div class="board-desc">' + escapeHtml(b.description) + '</div>' : '');
+        body.appendChild(btn);
+      });
+    }
+
+    // 點選彈窗裡的看板：行為等同在下拉選單選擇該看板，並關閉彈窗
+    function selectBoardFromPopup(boardId) {
+      document.getElementById('boardSelect').value = boardId;
+      onBoardChange();
+      closeBoardListPopup();
+    }
+
+    // ticket 08：排行榜彈窗
+    function openLeaderboardPopup() {
+      document.getElementById('leaderboardPopup').classList.add('open');
+      document.getElementById('leaderboardPopupBody').innerHTML = '<div class="placeholder-msg" style="margin:20px; font-size:0.9rem;">載入中...</div>';
+
+      google.script.run.withSuccessHandler(function(json) {
+        var data = {};
+        try { data = JSON.parse(json || '{}'); } catch (e) { data = {}; }
+        renderLeaderboardPopup(data);
+      }).getLeaderboardFromToken(currentToken);
+    }
+
+    function closeLeaderboardPopup() {
+      document.getElementById('leaderboardPopup').classList.remove('open');
+    }
+
+    function renderLeaderboardPopup(data) {
+      var body = document.getElementById('leaderboardPopupBody');
+      body.innerHTML =
+        renderLeaderboardCategory('🔑 登入次數', data.loginCount) +
+        renderLeaderboardCategory('📝 發表文章數', data.articleCount) +
+        renderLeaderboardCategory('💬 回覆數', data.replyCount);
+    }
+
+    // 平手的使用者共用同一個名次（例如第 2 名有兩人同分，兩人都標示 #2，
+    // 下一個不同分數的人才是 #3），不是單純依陣列順序編號
+    function renderLeaderboardCategory(title, list) {
+      if (!list || list.length === 0) {
+        return '<div class="leaderboard-category"><h4>' + escapeHtml(title) + '</h4><div class="leaderboard-empty">尚無資料</div></div>';
+      }
+      var rows = '';
+      var rank = 0;
+      var lastValue = null;
+      list.forEach(function(item) {
+        if (item.value !== lastValue) {
+          rank += 1;
+          lastValue = item.value;
+        }
+        rows += '<div class="leaderboard-row"><span class="leaderboard-rank">#' + rank + '</span>' +
+          '<span class="leaderboard-user">' + escapeHtml(item.userId) + '</span>' +
+          '<span class="leaderboard-value">' + item.value + '</span></div>';
+      });
+      return '<div class="leaderboard-category"><h4>' + escapeHtml(title) + '</h4>' + rows + '</div>';
+    }
+
+    window.addEventListener('resize', updateViewMode);
+    // popstate：三種畫面之後，「BACK 一律回 list」不再成立（例如從 detail 開 compose，返回應該回 detail 而不是 list），
+    // 改成直接信任瀏覽器自己記錄的 event.state（pushState 當下存的值），沒有 state（回到最原始那一頁）才預設回 list
+    window.addEventListener('popstate', function(event) {
+      var state = event.state;
+      navState = (state && state.screen)
+        ? { screen: state.screen, articleId: state.articleId || null }
+        : { screen: 'list', articleId: null };
+      applyBodyClasses();
+    });
 
     // 頁面初始化
     window.onload = function() {
+      updateViewMode();
       checkUserStatus();
+      renderNewArticleImageSlots();
+      renderMobileNewArticleImageSlots();
     };
 
     // 1. 檢查並更新使用者權限狀態
@@ -348,11 +995,35 @@
     // 2. 渲染頂部欄位的登入/帳號資訊
     function renderTopUserPanel() {
       var panel = document.getElementById('userPanel');
+      var leaderboardBtn = document.getElementById('leaderboardBtn');
+      var mobileFabBtn = document.getElementById('mobileFabBtn');
+      var btnTogglePost = document.getElementById('btnTogglePost');
       if (currentUserId) {
+        var loginStatsText = '登入次數: ' + (currentLoginCount || '—') + ' ｜ 上次登入: ' + (currentLastLoginAt || '尚無記錄');
         panel.innerHTML = `
           <span>身份: <strong>${escapeHtml(currentUserId)}</strong> (${currentRole})</span>
+          <span class="login-stats-badge">${escapeHtml(loginStatsText)}</span>
           <button class="secondary" onclick="handleLogout()">登出</button>
+          <button type="button" class="mobile-more-btn" onclick="toggleMoreMenu()">⋯</button>
         `;
+        // 優化輪 ticket 07：手機版收進「⋯」選單裡的資訊列，跟桌面版顯示同一份資料
+        registerMoreMenuItem('loginStats', '🔑 ' + loginStatsText, null);
+
+        // ticket 08：排行榜只對 user/admin 開放，跟看板內容的權限限制一致，newbie 看不到
+        // 追加修正：發文入口（手機浮動 ➕、桌面「+ 發表新文章」）也是同樣道理——
+        // newbie/未登入點了送出一定會被後端權限擋下，乾脆前端就不給點，不用等
+        // 使用者填完表單才碰壁
+        if (currentRole === 'user' || currentRole === 'admin') {
+          if (leaderboardBtn) leaderboardBtn.style.display = '';
+          registerMoreMenuItem('leaderboard', '🏆 排行榜', openLeaderboardPopup);
+          if (mobileFabBtn) mobileFabBtn.style.display = '';
+          if (btnTogglePost) btnTogglePost.style.display = '';
+        } else {
+          if (leaderboardBtn) leaderboardBtn.style.display = 'none';
+          unregisterMoreMenuItem('leaderboard');
+          if (mobileFabBtn) mobileFabBtn.style.display = 'none';
+          if (btnTogglePost) btnTogglePost.style.display = 'none';
+        }
       } else {
         panel.innerHTML = `
           <input type="text" id="loginUserId" placeholder="帳號" style="width: 100px;">
@@ -360,29 +1031,65 @@
           <button class="btn-primary" onclick="handleLogin()">登入</button>
           <button class="secondary" onclick="handleRegister()">註冊</button>
         `;
+        if (leaderboardBtn) leaderboardBtn.style.display = 'none';
+        unregisterMoreMenuItem('leaderboard');
+        if (mobileFabBtn) mobileFabBtn.style.display = 'none';
+        if (btnTogglePost) btnTogglePost.style.display = 'none';
       }
     }
 
     // 3. 載入看板下拉選單
+    // 看板新內容提示功能：N=有新文章，n=有新回覆，兩者都有就是 Nn
+    function boardBadgeText(b) {
+      var badge = '';
+      if (b.hasNewArticle) badge += 'N';
+      if (b.hasNewReply) badge += 'n';
+      return badge;
+    }
+
+    function renderBoardSelectOptions() {
+      var select = document.getElementById('boardSelect');
+      var previousValue = select.value;
+      select.innerHTML = '';
+      allBoards.forEach(function(b) {
+        var opt = document.createElement('option');
+        opt.value = b.boardId;
+        var badge = boardBadgeText(b);
+        opt.textContent = b.boardName + (badge ? ' ' + badge : '');
+        select.appendChild(opt);
+      });
+      if (previousValue) select.value = previousValue;
+    }
+
+    // 使用者進入看板時（下拉選單選、看板列表彈窗點、或頁面載入時預設選中的第一個看板）
+    // 都算「看過」：通知後端記錄這個時間點，並立刻在本地清掉這個看板的提示，不用等
+    // 下次 loadBoards 才消失。不等後端回應、不處理失敗（背景動作，純顯示用途，
+    // 就算這次沒存到，下次再進來還是會正常重新記錄）
+    function markBoardEntered(boardId) {
+      google.script.run.markBoardSeenFromToken(currentToken, boardId);
+      var board = allBoards.find(function(b) { return b.boardId === boardId; });
+      if (board) {
+        board.hasNewArticle = false;
+        board.hasNewReply = false;
+      }
+      renderBoardSelectOptions();
+      renderBoardListPopup();
+    }
+
     function loadBoards() {
       google.script.run.withSuccessHandler(function(json) {
         var boards = [];
         try { boards = JSON.parse(json || '[]'); } catch (e) { boards = []; }
+        allBoards = boards; // ticket 06：存起來給看板列表彈窗用
 
         var select = document.getElementById('boardSelect');
-        select.innerHTML = '';
         if (!boards || boards.length === 0) {
           select.innerHTML = '<option value="">(無可用看板)</option>';
           document.getElementById('articleList').innerHTML = '<div class="placeholder-msg" style="margin-top: 40px; font-size: 0.9rem;">無權限或無看板</div>';
           return;
         }
 
-        boards.forEach(function(b) {
-          var opt = document.createElement('option');
-          opt.value = b.boardId;
-          opt.textContent = b.boardName;
-          select.appendChild(opt);
-        });
+        renderBoardSelectOptions();
 
         // 深連結：網址帶了 ?board= 就優先選那個看板，否則預設第一個
         var targetBoardId = bootstrapData.boardId;
@@ -391,6 +1098,7 @@
         select.value = currentBoardId;
 
         loadArticles(currentBoardId);
+        markBoardEntered(currentBoardId);
 
         // 深連結：網址帶了 ?article= 就直接開啟該篇文章
         if (bootstrapData.articleId) {
@@ -405,6 +1113,80 @@
       currentArticleId = '';
       document.getElementById('rightPanel').innerHTML = '<div class="placeholder-msg">👈 請從左側點選文章查看內容</div>';
       loadArticles(currentBoardId);
+      markBoardEntered(currentBoardId);
+    }
+
+    // 優化輪 ticket 03（#1a）：本次 session 已經完整讀取過的看板文章列表快取，
+    // key 是 boardId，value 是 { version, articles }。重新整理頁面會清空（預期行為，
+    // 之後再進來視同本次 session 第一次讀取該看板）。
+    var boardArticleCache = {};
+
+    function renderArticleListFromCache(boardId) {
+      var listContainer = document.getElementById('articleList');
+      var entry = boardArticleCache[boardId];
+      var articles = entry ? entry.articles : [];
+
+      if (articles.length === 0) {
+        listContainer.innerHTML = '<div class="placeholder-msg" style="margin-top: 40px; font-size: 0.9rem;">此看板尚無文章</div>';
+        return;
+      }
+
+      listContainer.innerHTML = '';
+      articles.forEach(function(item) {
+        var div = document.createElement('div');
+        div.className = 'article-item' + (item.articleId === currentArticleId ? ' active' : '');
+        div.onclick = function() {
+          selectArticle(item.articleId, div);
+        };
+        div.innerHTML = `
+          <div class="title" title="${escapeHtml(item.title)}">${escapeHtml(item.title)}</div>
+          <div class="meta">
+            <span>${escapeHtml(item.author)}</span>
+            <span>💬${item.replyCount || 0}</span>
+          </div>
+        `;
+        listContainer.appendChild(div);
+      });
+    }
+
+    // 本人發文成功後直接本地插入，不重新呼叫 getArticlesFromToken；
+    // 新文章排最前面，跟伺服器端「newest first」排序一致
+    function patchArticleListOnCreate(boardId, version, newArticle) {
+      var entry = boardArticleCache[boardId];
+      if (!entry) return false; // 這個看板本次 session 還沒讀過，沒東西可以本地拼接，下次切過去時走正常的完整讀取
+      entry.articles.unshift(newArticle);
+      entry.version = version; // 同步伺服器這次寫入後的新版本，避免下次比對誤判成「有其他異動」
+      return true;
+    }
+
+    function patchArticleListOnEdit(boardId, version, articleId, newTitle) {
+      var entry = boardArticleCache[boardId];
+      if (!entry) return false;
+      var target = entry.articles.find(function(a) { return a.articleId === articleId; });
+      if (target) target.title = newTitle;
+      entry.version = version;
+      return true;
+    }
+
+    function patchArticleListOnDelete(boardId, version, articleId) {
+      var entry = boardArticleCache[boardId];
+      if (!entry) return false;
+      entry.articles = entry.articles.filter(function(a) { return a.articleId !== articleId; });
+      entry.version = version;
+      return true;
+    }
+
+    // 優化輪 ticket 04：本人在文章詳情頁發表/刪除回覆時，順手同步更新看板列表裡
+    // 那篇文章旁邊顯示的回覆數徽章（純本地更新，不 bump 看板版本——原因見 ticket 03
+    // 「回覆數過期視窗」的取捨說明：只保證自己看到的是準的，別人要等看板版本被
+    // 發文/編輯/刪文帶動才會更新）
+    function patchArticleListReplyCount(boardId, articleId, delta) {
+      var entry = boardArticleCache[boardId];
+      if (!entry) return;
+      var target = entry.articles.find(function(a) { return a.articleId === articleId; });
+      if (!target) return;
+      target.replyCount = (target.replyCount || 0) + delta;
+      renderArticleListFromCache(boardId);
     }
 
     // 4. 載入左側文章列表 (單行高密度 rendering)
@@ -412,32 +1194,22 @@
       var listContainer = document.getElementById('articleList');
       listContainer.innerHTML = '<div class="placeholder-msg" style="margin-top: 40px; font-size: 0.9rem;">載入中...</div>';
 
-      google.script.run.withSuccessHandler(function(json) {
-        var articles = [];
-        try { articles = JSON.parse(json || '[]'); } catch (e) { articles = []; }
+      var known = boardArticleCache[boardId];
+      var knownVersion = known ? known.version : '';
 
-        if (articles.length === 0) {
-          listContainer.innerHTML = '<div class="placeholder-msg" style="margin-top: 40px; font-size: 0.9rem;">此看板尚無文章</div>';
+      google.script.run.withSuccessHandler(function(json) {
+        var res = {};
+        try { res = JSON.parse(json || '{}'); } catch (e) { res = {}; }
+
+        if (res.unchanged) {
+          // 版本沒變，沿用本地已經快取的資料，不用理會 res.articles（伺服器這次根本沒撈）
+          renderArticleListFromCache(boardId);
           return;
         }
 
-        listContainer.innerHTML = '';
-        articles.forEach(function(item) {
-          var div = document.createElement('div');
-          div.className = 'article-item' + (item.articleId === currentArticleId ? ' active' : '');
-          div.onclick = function() {
-            selectArticle(item.articleId, div);
-          };
-          div.innerHTML = `
-            <div class="title" title="${escapeHtml(item.title)}">${escapeHtml(item.title)}</div>
-            <div class="meta">
-              <span>${escapeHtml(item.author)}</span>
-              <span>💬${item.replyCount || 0}</span>
-            </div>
-          `;
-          listContainer.appendChild(div);
-        });
-      }).getArticlesFromToken(currentToken, boardId);
+        boardArticleCache[boardId] = { version: res.version, articles: res.articles || [] };
+        renderArticleListFromCache(boardId);
+      }).getArticlesFromToken(currentToken, boardId, knownVersion);
     }
 
     // 5. 折疊/展開發文表單切換
@@ -463,28 +1235,137 @@
       items.forEach(el => el.classList.remove('active'));
       if (elementNode) elementNode.classList.add('active');
 
+      // 手機版：切換到單畫面「詳情」畫面，並推一筆瀏覽器歷史記錄，
+      // 讓實體/手勢返回鍵可以回到列表（見 popstate 監聽）。
+      // 只有「真的從別的畫面切進來」才 push 新的一筆——如果已經在 detail 畫面
+      // 只是重新整理同一篇文章（例如發完回覆後刷新），不重複推疊歷史記錄，
+      // 不然手機返回鍵會需要按兩次才能真的離開這篇文章。
+      var wasAlreadyInDetail = (viewMode === 'mobile' && navState.screen === 'detail');
+      navState = applyNavAction(navState, { type: 'OPEN_ARTICLE', articleId: articleId });
+      if (viewMode === 'mobile' && !wasAlreadyInDetail) {
+        history.pushState({ screen: 'detail', articleId: articleId }, '', '');
+      }
+      applyBodyClasses();
+
       loadArticleDetail(articleId);
     }
+
+    // 優化輪 ticket 04（#1b）：本次 session 已經完整讀取過的文章詳情快取，
+    // key 是 articleId，value 是 { version, data: {article, replies} }。行為對稱於
+    // ticket 03 的 boardArticleCache。
+    var articleDetailCache = {};
 
     function loadArticleDetail(articleId) {
       var rightPanel = document.getElementById('rightPanel');
       rightPanel.innerHTML = '<div class="placeholder-msg">文章載入中...</div>';
 
-      google.script.run.withSuccessHandler(function(json) {
-        var data = null;
-        try { data = JSON.parse(json || 'null'); } catch (e) { data = null; }
+      var known = articleDetailCache[articleId];
+      var knownVersion = known ? known.version : '';
 
-        if (!data || !data.article) {
+      google.script.run.withSuccessHandler(function(json) {
+        var res = null;
+        try { res = JSON.parse(json || 'null'); } catch (e) { res = null; }
+
+        if (res && res.unchanged) {
+          var cached = articleDetailCache[articleId];
+          if (cached) {
+            lastArticleDetail = cached.data;
+            renderArticleDetail(cached.data);
+            return;
+          }
+          // 理論上不會走到這（有版本值代表之前一定快取過），保險起見還是當作要重讀
+        }
+
+        if (!res || !res.article) {
           rightPanel.innerHTML = '<div class="placeholder-msg">文章不存在或已被刪除</div>';
+          delete articleDetailCache[articleId];
           return;
         }
 
+        var data = { article: res.article, replies: res.replies || [] };
+        articleDetailCache[articleId] = { version: res.version, data: data };
         lastArticleDetail = data;
         renderArticleDetail(data);
-      }).getArticleDetailFromToken(currentToken, articleId);
+      }).getArticleDetailFromToken(currentToken, articleId, knownVersion);
+    }
+
+    // 本人回覆成功後直接本地插入，不重新呼叫 getArticleDetailFromToken；
+    // 回覆是「舊到新」排序，新的回覆排最後面
+    function patchArticleDetailOnReplyCreate(articleId, version, newReply) {
+      var entry = articleDetailCache[articleId];
+      if (!entry) return false;
+      entry.data.replies.push(newReply);
+      entry.version = version;
+      lastArticleDetail = entry.data;
+      return true;
+    }
+
+    function patchArticleDetailOnReplyDelete(articleId, version, replyId) {
+      var entry = articleDetailCache[articleId];
+      if (!entry) return false;
+      entry.data.replies = entry.data.replies.filter(function(r) { return r.replyId !== replyId; });
+      entry.version = version;
+      lastArticleDetail = entry.data;
+      return true;
+    }
+
+    function patchArticleDetailOnEdit(articleId, version, title, content, editedAt, editedBy, imageUrls) {
+      var entry = articleDetailCache[articleId];
+      if (!entry) return false;
+      entry.data.article.title = title;
+      entry.data.article.content = content;
+      entry.data.article.editedAt = editedAt;
+      entry.data.article.editedBy = editedBy;
+      if (imageUrls) {
+        entry.data.article.imageUrl1 = imageUrls[0] || '';
+        entry.data.article.imageUrl2 = imageUrls[1] || '';
+        entry.data.article.imageUrl3 = imageUrls[2] || '';
+      }
+      entry.version = version;
+      lastArticleDetail = entry.data;
+      return true;
     }
 
     // 6b. 實際組裝右側文章詳情 HTML（含檢視 / 編輯兩種模式）
+    // ticket 09/10：文章下方縮圖，點擊以燈箱放大顯示
+    function renderArticleImages(article) {
+      var urls = [article.imageUrl1, article.imageUrl2, article.imageUrl3].filter(function(u) { return u; });
+      if (urls.length === 0) return '';
+      var imgs = urls.map(function(u) {
+        return '<img src="' + escapeHtml(u) + '" alt="文章附加圖片" onclick="openLightbox(\'' + escapeHtml(u) + '\')" />';
+      }).join('');
+      return '<div class="article-images">' + imgs + '</div>';
+    }
+
+    function openLightbox(url) {
+      document.getElementById('lightboxImage').src = url;
+      document.getElementById('lightboxOverlay').classList.add('open');
+    }
+
+    function closeLightbox() {
+      document.getElementById('lightboxOverlay').classList.remove('open');
+      document.getElementById('lightboxImage').src = '';
+    }
+
+    // ticket 10：編輯文章時的圖片管理——3 個格子，每格是既有圖片（可移除）或空格（可選新圖片）
+    function renderEditImageSlots() {
+      return renderImageSlotsHtml(editImageSlots, 'setEditImageSlot', 'removeEditImageSlot') +
+        '<div class="image-upload-warning">⚠️ 圖片連結為公開分享連結（知道連結就能看），請勿上傳含敏感內容的圖片</div>';
+    }
+
+    function removeEditImageSlot(index) {
+      editImageSlots[index] = '';
+      renderArticleDetail(lastArticleDetail);
+    }
+
+    function setEditImageSlot(index, inputEl) {
+      var file = inputEl.files && inputEl.files[0];
+      if (!file) return;
+      if (!validateImageFile(file)) { inputEl.value = ''; return; }
+      editImageSlots[index] = file;
+      renderArticleDetail(lastArticleDetail);
+    }
+
     function renderArticleDetail(data) {
       var article = data.article;
       var replies = data.replies || [];
@@ -498,7 +1379,8 @@
           <input type="text" id="editArticleTitle" value="${escapeHtml(article.title)}"
             style="width:100%; font-size:1.3rem; font-weight:bold; margin-bottom:8px; padding:6px; border:1px solid #cbd5e1; border-radius:4px;">
           <textarea id="editArticleContent" style="width:100%; height:140px; padding:8px; border:1px solid #cbd5e1; border-radius:4px; margin-bottom:8px;">${escapeHtml(article.content)}</textarea>
-          <div style="display:flex; gap:8px;">
+          ${renderEditImageSlots()}
+          <div style="display:flex; gap:8px; margin-top:8px;">
             <button class="btn-primary" onclick="handleSaveEditArticle('${article.articleId}')">儲存</button>
             <button class="secondary" onclick="handleCancelEditArticle()">取消</button>
           </div>
@@ -515,13 +1397,15 @@
           </div>
           <div class="header-meta">
             作者：<strong>${escapeHtml(article.author)}</strong> | 發布時間：${escapeHtml(article.createdAt)}
-            ${article.editedAt ? ' | (已編輯於 ' + escapeHtml(article.editedAt) + ')' : ''}
+            ${article.editedAt ? ' | 由 ' + escapeHtml(article.editedBy || '未知') + ' 於 ' + escapeHtml(article.editedAt) + ' 編輯' : ''}
           </div>
           <div class="body-content">${escapeHtml(article.content)}</div>
+          ${renderArticleImages(article)}
         `;
       }
 
-      var html = `<div class="article-detail-card">${headerHtml}</div>`;
+      var html = `<button type="button" class="mobile-back-btn" onclick="backToList()">← 返回列表</button>`;
+      html += `<div class="article-detail-card">${headerHtml}</div>`;
 
       html += `
         <div class="replies-section">
@@ -569,6 +1453,11 @@
         if (res.success) {
           currentToken = res.token;
           sessionStorage.setItem('bbs_token', currentToken);
+          // 優化輪 ticket 07：這是「這次登入當下」的快照，存起來讓本次 session（含中途重整頁面）都沿用同一份，不重新查詢
+          currentLoginCount = res.loginCount;
+          currentLastLoginAt = res.lastLoginAt || '';
+          sessionStorage.setItem('bbs_login_count', String(currentLoginCount));
+          sessionStorage.setItem('bbs_last_login_at', currentLastLoginAt);
           checkUserStatus();
         } else {
           alert('登入失敗: ' + res.error);
@@ -592,69 +1481,293 @@
       google.script.run.withSuccessHandler(function() {
         currentToken = '';
         sessionStorage.removeItem('bbs_token');
+        currentLoginCount = '';
+        currentLastLoginAt = '';
+        sessionStorage.removeItem('bbs_login_count');
+        sessionStorage.removeItem('bbs_last_login_at');
         checkUserStatus();
       }).logoutFromForm(currentToken);
     }
 
+    // ---- ticket 09/10（後續統一為 3 格單選，見對話紀錄）：圖片上傳前處理 ----
+    var ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+    var MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024; // 5MB
+    var MAX_IMAGES_PER_ARTICLE = 3;
+
+    // 共用的單一檔案驗證（格式/大小），選圖當下就檔，不用等送出後端才發現被拒絕
+    function validateImageFile(file) {
+      if (ALLOWED_IMAGE_TYPES.indexOf(file.type) === -1) {
+        alert('圖片格式僅支援 jpg/png/gif/webp：' + file.name);
+        return false;
+      }
+      if (file.size > MAX_IMAGE_SIZE_BYTES) {
+        alert('圖片檔案大小不能超過 5MB：' + file.name);
+        return false;
+      }
+      return true;
+    }
+
+    // 共用的「N 個圖片格」畫面產生器：slots[i] 可能是既有連結字串（編輯文章時）、
+    // 新選的 File 物件、或空字串（可選新圖片的空格）。發文（一開始 3 格都是空的）
+    // 跟編輯文章（一開始填入既有的 imageUrl1~3）共用同一套外觀跟邏輯，統一都是
+    // 3 個單選格子，不是一個可複選的檔案選取欄位——每一格能各自單獨移除/替換。
+    // changeFnName/removeFnName 是要接在 onchange/onclick 上的全域函式名稱字串。
+    function renderImageSlotsHtml(slots, changeFnName, removeFnName) {
+      var html = '<div class="edit-image-slots">';
+      for (var i = 0; i < MAX_IMAGES_PER_ARTICLE; i++) {
+        var slot = slots[i];
+        html += '<div class="edit-image-slot">';
+        if (slot && typeof slot === 'string') {
+          html += '<img src="' + escapeHtml(slot) + '" alt="附加圖片" />';
+          html += '<button type="button" class="secondary" style="font-size:0.75rem; padding:2px 8px;" onclick="' + removeFnName + '(' + i + ')">移除</button>';
+        } else if (slot instanceof File) {
+          html += '<img src="' + URL.createObjectURL(slot) + '" alt="新選擇的圖片" />';
+          html += '<button type="button" class="secondary" style="font-size:0.75rem; padding:2px 8px;" onclick="' + removeFnName + '(' + i + ')">移除</button>';
+        } else {
+          html += '<input type="file" accept="image/jpeg,image/png,image/gif,image/webp" onchange="' + changeFnName + '(' + i + ', this)" />';
+        }
+        html += '</div>';
+      }
+      html += '</div>';
+      return html;
+    }
+
+    // 從 slots 陣列裡取出真正要上傳的 File 物件（既有連結字串跟空字串都跳過）
+    function filesFromImageSlots(slots) {
+      return slots.filter(function(s) { return s instanceof File; });
+    }
+
+    // 把已經驗證過的 File 陣列轉成 base64，供 google.script.run 傳給後端存進 Drive
+    function readFilesAsBase64Payload(files) {
+      var readers = files.map(function(file) {
+        return new Promise(function(resolve, reject) {
+          var reader = new FileReader();
+          reader.onload = function() {
+            var base64 = reader.result.split(',')[1]; // 去掉開頭的 "data:image/png;base64," 前綴
+            resolve({ data: base64, mimeType: file.type, fileName: file.name });
+          };
+          reader.onerror = function() { reject(reader.error); };
+          reader.readAsDataURL(file);
+        });
+      });
+      return Promise.all(readers);
+    }
+
+    // ---- 發文表單（桌面）的 3 個圖片格 ----
+    var newArticleImageSlots = ['', '', ''];
+
+    function renderNewArticleImageSlots() {
+      var container = document.getElementById('newArticleImageSlotsContainer');
+      if (container) container.innerHTML = renderImageSlotsHtml(newArticleImageSlots, 'setNewArticleImageSlot', 'removeNewArticleImageSlot');
+    }
+
+    function setNewArticleImageSlot(index, inputEl) {
+      var file = inputEl.files && inputEl.files[0];
+      if (!file) return;
+      if (!validateImageFile(file)) { inputEl.value = ''; return; }
+      newArticleImageSlots[index] = file;
+      renderNewArticleImageSlots();
+    }
+
+    function removeNewArticleImageSlot(index) {
+      newArticleImageSlots[index] = '';
+      renderNewArticleImageSlots();
+    }
+
+    // ---- 發文表單（手機全螢幕頁）的 3 個圖片格，邏輯同上，狀態各自獨立 ----
+    var mobileNewArticleImageSlots = ['', '', ''];
+
+    function renderMobileNewArticleImageSlots() {
+      var container = document.getElementById('mobileNewArticleImageSlotsContainer');
+      if (container) container.innerHTML = renderImageSlotsHtml(mobileNewArticleImageSlots, 'setMobileNewArticleImageSlot', 'removeMobileNewArticleImageSlot');
+    }
+
+    function setMobileNewArticleImageSlot(index, inputEl) {
+      var file = inputEl.files && inputEl.files[0];
+      if (!file) return;
+      if (!validateImageFile(file)) { inputEl.value = ''; return; }
+      mobileNewArticleImageSlots[index] = file;
+      renderMobileNewArticleImageSlots();
+    }
+
+    function removeMobileNewArticleImageSlot(index) {
+      mobileNewArticleImageSlots[index] = '';
+      renderMobileNewArticleImageSlots();
+    }
+
+    // ---- 防連點造成重複送出 ----
+    // 用「這個動作還在等 GAS 回應嗎」的旗標擋第二次點擊，不猜測固定時間間隔；
+    // GAS 反應本來就不快，連點兩下常常在第一次還沒回來前就送出第二次，導致
+    // 發文/回覆變兩篇，或刪除/編輯在極端情況下被同一個請求重複處理。
+    // 旗標在送出前設成「進行中」，GAS 回應（不管成功或失敗）才解除——不是
+    // 用固定時間間隔，這樣 GAS 快就快放行、慢就一直擋到真的回來為止。
+    var pendingRequests = {};
+
+    function isRequestPending(key) {
+      return !!pendingRequests[key];
+    }
+
+    function beginRequest(key) {
+      pendingRequests[key] = true;
+    }
+
+    function endRequest(key) {
+      pendingRequests[key] = false;
+    }
+
     function handlePostArticle() {
+      if (isRequestPending('postArticle')) return; // 連點：已經有一個發文請求還在等 GAS 回應，直接跳過
       var title = document.getElementById('newArticleTitle').value;
       var content = document.getElementById('newArticleContent').value;
       if (!title || !content) { alert('請填寫標題與內容'); return; }
 
-      google.script.run.withSuccessHandler(function(res) {
-        if (res.success) {
-          document.getElementById('newArticleTitle').value = '';
-          document.getElementById('newArticleContent').value = '';
-          togglePostForm(); // 發文後自動收合表單
-          loadArticles(currentBoardId);
-        } else {
-          alert('發文失敗: ' + res.error);
-        }
-      }).postArticleFromForm(currentToken, currentBoardId, title, content);
+      readFilesAsBase64Payload(filesFromImageSlots(newArticleImageSlots)).then(function(images) {
+        beginRequest('postArticle');
+        google.script.run.withSuccessHandler(function(res) {
+          endRequest('postArticle');
+          if (res.success) {
+            document.getElementById('newArticleTitle').value = '';
+            document.getElementById('newArticleContent').value = '';
+            newArticleImageSlots = ['', '', ''];
+            renderNewArticleImageSlots();
+            togglePostForm(); // 發文後自動收合表單
+            var patched = patchArticleListOnCreate(currentBoardId, res.version, {
+              articleId: res.articleId,
+              boardId: currentBoardId,
+              title: title,
+              author: res.author,
+              createdAt: res.createdAt,
+              replyCount: 0
+            });
+            if (patched) { renderArticleListFromCache(currentBoardId); } else { loadArticles(currentBoardId); }
+          } else {
+            alert('發文失敗: ' + res.error);
+          }
+        }).withFailureHandler(function(err) {
+          endRequest('postArticle');
+          alert('發文失敗，請稍後再試: ' + err.message);
+        }).postArticleFromForm(currentToken, currentBoardId, title, content, images);
+      });
+    }
+
+    // ticket 02：手機版全螢幕發文頁專用（沿用同一支 postArticleFromForm，只是欄位換成 mobile 專用的 input id）
+    function handleMobilePostArticle() {
+      if (isRequestPending('postArticle')) return; // 跟桌面版共用同一把鎖：同一時間本來就不可能兩邊同時發文
+      var title = document.getElementById('mobileNewArticleTitle').value;
+      var content = document.getElementById('mobileNewArticleContent').value;
+      if (!title || !content) { alert('請填寫標題與內容'); return; }
+
+      readFilesAsBase64Payload(filesFromImageSlots(mobileNewArticleImageSlots)).then(function(images) {
+        beginRequest('postArticle');
+        google.script.run.withSuccessHandler(function(res) {
+          endRequest('postArticle');
+          if (res.success) {
+            mobileNewArticleImageSlots = ['', '', ''];
+            renderMobileNewArticleImageSlots();
+            var patched = patchArticleListOnCreate(currentBoardId, res.version, {
+              articleId: res.articleId,
+              boardId: currentBoardId,
+              title: title,
+              author: res.author,
+              createdAt: res.createdAt,
+              replyCount: 0
+            });
+            if (patched) { renderArticleListFromCache(currentBoardId); } else { loadArticles(currentBoardId); }
+            closeMobileCompose(); // 送出成功後回到原本畫面（list 或 detail，見 history.back() 的說明）
+          } else {
+            alert('發文失敗: ' + res.error);
+          }
+        }).withFailureHandler(function(err) {
+          endRequest('postArticle');
+          alert('發文失敗，請稍後再試: ' + err.message);
+        }).postArticleFromForm(currentToken, currentBoardId, title, content, images);
+      });
     }
 
     function handlePostReply() {
+      if (isRequestPending('postReply')) return;
       var content = document.getElementById('replyContentInput').value;
       if (!content) { alert('請輸入回覆內容'); return; }
 
+      beginRequest('postReply');
       google.script.run.withSuccessHandler(function(res) {
+        endRequest('postReply');
         if (res.success) {
-          selectArticle(currentArticleId, null);
+          var patched = patchArticleDetailOnReplyCreate(currentArticleId, res.version, {
+            replyId: res.replyId,
+            articleId: currentArticleId,
+            author: res.author,
+            content: content,
+            createdAt: res.createdAt
+          });
+          if (patched) { renderArticleDetail(lastArticleDetail); } else { selectArticle(currentArticleId, null); }
+          patchArticleListReplyCount(currentBoardId, currentArticleId, 1);
         } else {
           alert('回覆失敗: ' + res.error);
         }
+      }).withFailureHandler(function(err) {
+        endRequest('postReply');
+        alert('回覆失敗，請稍後再試: ' + err.message);
       }).postReplyFromForm(currentToken, currentArticleId, content);
     }
 
     // 8. 刪除文章 / 刪除留言（顯示與否已在 renderArticleDetail 依權限判斷）
     function handleDeleteArticle(articleId) {
+      if (isRequestPending('deleteArticle')) return;
       if (!confirm('確定要刪除這篇文章嗎？留言也會一併刪除，此動作無法復原。')) return;
 
+      beginRequest('deleteArticle');
       google.script.run.withSuccessHandler(function(res) {
+        endRequest('deleteArticle');
         if (res.success) {
           currentArticleId = '';
+          delete articleDetailCache[articleId]; // 優化輪 ticket 04：文章沒了，本地文章詳情快取也一併清掉
           document.getElementById('rightPanel').innerHTML = '<div class="placeholder-msg">👈 請從左側點選文章查看內容</div>';
-          loadArticles(currentBoardId); // 重新整理左側文章列表
+          var patched = patchArticleListOnDelete(res.boardId || currentBoardId, res.version, articleId);
+          if (patched) { renderArticleListFromCache(res.boardId || currentBoardId); } else { loadArticles(currentBoardId); }
+          // 手機版：文章被刪掉了，畫面上不會再有「← 返回列表」按鈕，
+          // 直接透過瀏覽器歷史記錄退回列表畫面（跟 backToList() 走同一條路徑）
+          if (viewMode === 'mobile') {
+            backToList();
+          }
         } else {
           alert('刪除失敗: ' + res.error);
         }
+      }).withFailureHandler(function(err) {
+        endRequest('deleteArticle');
+        alert('刪除失敗，請稍後再試: ' + err.message);
       }).deleteArticleFromForm(currentToken, articleId);
     }
 
     function handleDeleteReply(articleId, replyId) {
+      if (isRequestPending('deleteReply')) return;
       if (!confirm('確定要刪除這則回覆嗎？此動作無法復原。')) return;
 
+      beginRequest('deleteReply');
       google.script.run.withSuccessHandler(function(res) {
+        endRequest('deleteReply');
         if (res.success) {
-          selectArticle(articleId, null); // 重新載入文章詳情，回覆數跟列表會一起更新
+          var patched = patchArticleDetailOnReplyDelete(articleId, res.version, replyId);
+          if (patched) { renderArticleDetail(lastArticleDetail); } else { selectArticle(articleId, null); }
+          patchArticleListReplyCount(currentBoardId, articleId, -1);
         } else {
           alert('刪除失敗: ' + res.error);
         }
+      }).withFailureHandler(function(err) {
+        endRequest('deleteReply');
+        alert('刪除失敗，請稍後再試: ' + err.message);
       }).deleteReplyFromForm(currentToken, articleId, replyId);
     }
 
     // 9. 編輯文章（擁有者或 admin）
     function handleStartEditArticle() {
+      // ticket 10：把目前的 3 個圖片欄位存進編輯用的暫存狀態，讓使用者可以個別新增/替換/移除
+      var article = lastArticleDetail && lastArticleDetail.article;
+      editImageSlots = [
+        (article && article.imageUrl1) || '',
+        (article && article.imageUrl2) || '',
+        (article && article.imageUrl3) || ''
+      ];
       isEditingArticle = true;
       renderArticleDetail(lastArticleDetail);
     }
@@ -664,20 +1777,48 @@
       renderArticleDetail(lastArticleDetail);
     }
 
+    // 把 editImageSlots（字串=保留既有連結 / File 物件=新選的圖片 / ''=空）轉成
+    // 要送給 editArticleFromForm 的格式：字串照傳，File 轉成 base64 物件
+    function buildImageSlotsPayload() {
+      return Promise.all(editImageSlots.map(function(slot) {
+        if (slot instanceof File) {
+          return new Promise(function(resolve, reject) {
+            var reader = new FileReader();
+            reader.onload = function() {
+              resolve({ data: reader.result.split(',')[1], mimeType: slot.type, fileName: slot.name });
+            };
+            reader.onerror = function() { reject(reader.error); };
+            reader.readAsDataURL(slot);
+          });
+        }
+        return Promise.resolve(slot || '');
+      }));
+    }
+
     function handleSaveEditArticle(articleId) {
+      if (isRequestPending('saveEditArticle')) return;
       var title = document.getElementById('editArticleTitle').value;
       var content = document.getElementById('editArticleContent').value;
       if (!title || !content) { alert('請填寫標題與內容'); return; }
 
-      google.script.run.withSuccessHandler(function(res) {
-        if (res.success) {
-          isEditingArticle = false;
-          loadArticleDetail(articleId);   // 重新抓取最新內容（含 editedAt / editedBy）
-          loadArticles(currentBoardId);   // 左側列表的標題也同步更新
-        } else {
-          alert('儲存失敗: ' + res.error);
-        }
-      }).editArticleFromForm(currentToken, articleId, title, content);
+      buildImageSlotsPayload().then(function(imageSlots) {
+        beginRequest('saveEditArticle');
+        google.script.run.withSuccessHandler(function(res) {
+          endRequest('saveEditArticle');
+          if (res.success) {
+            isEditingArticle = false;
+            var patchedDetail = patchArticleDetailOnEdit(articleId, res.articleVersion, title, content, res.editedAt, res.editedBy, res.imageUrls);
+            if (patchedDetail) { renderArticleDetail(lastArticleDetail); } else { loadArticleDetail(articleId); }
+            var patched = patchArticleListOnEdit(res.boardId || currentBoardId, res.version, articleId, title);
+            if (patched) { renderArticleListFromCache(res.boardId || currentBoardId); } else { loadArticles(currentBoardId); }
+          } else {
+            alert('儲存失敗: ' + res.error);
+          }
+        }).withFailureHandler(function(err) {
+          endRequest('saveEditArticle');
+          alert('儲存失敗，請稍後再試: ' + err.message);
+        }).editArticleFromForm(currentToken, articleId, title, content, imageSlots);
+      });
     }
 
     // 10. 分享文章連結（任何看得到這篇文章的人都能分享；對方打開時仍會走一樣的權限檢查）

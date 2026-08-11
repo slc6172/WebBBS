@@ -1,8 +1,8 @@
 // The four BBS sheets and their header rows, per spec.
 var SHEET_HEADERS = {
-  Users: ['userId', 'passwordHash', 'salt', 'role', 'createdAt'],
-  Boards: ['boardId', 'boardName', 'description', 'sortOrder'],
-  Articles: ['articleId', 'boardId', 'title', 'author', 'content', 'createdAt', 'editedAt', 'editedBy', 'replyCount'],
+  Users: ['userId', 'passwordHash', 'salt', 'role', 'createdAt', 'loginCount', 'lastLoginAt', 'articleCount', 'replyCount', 'lastSeenBoards'],
+  Boards: ['boardId', 'boardName', 'description', 'sortOrder', 'latestArticleAt', 'latestReplyAt'],
+  Articles: ['articleId', 'boardId', 'title', 'author', 'content', 'createdAt', 'editedAt', 'editedBy', 'replyCount', 'imageUrl1', 'imageUrl2', 'imageUrl3'],
   Replies: ['replyId', 'articleId', 'author', 'content', 'createdAt']
 };
 
@@ -15,9 +15,10 @@ var SHEET_HEADERS = {
 // round-trips, frontend string handling) that expects createdAt/editedAt
 // to stay a plain string.
 var TIMESTAMP_COLUMNS = {
-  Users: [5],        // createdAt
-  Articles: [6, 7],  // createdAt, editedAt
-  Replies: [5]        // createdAt
+  Users: [5, 7],       // createdAt, lastLoginAt（優化輪 ticket 07）——lastSeenBoards（第 10 欄）是 JSON 不是時間戳記，不用鎖純文字
+  Boards: [5, 6],      // latestArticleAt, latestReplyAt（看板新內容提示功能）
+  Articles: [6, 7],    // createdAt, editedAt
+  Replies: [5]         // createdAt
 };
 
 /**

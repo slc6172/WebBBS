@@ -12,8 +12,10 @@ function gateByRoleFor_(role, allowedRoles) {
 
 /**
  * @param {Spreadsheet} spreadsheet
- * @returns {{boardId: string, boardName: string, description: string, sortOrder: number}[]}
- *   sorted ascending by sortOrder
+ * @returns {{boardId: string, boardName: string, description: string, sortOrder: number, latestArticleAt: string, latestReplyAt: string}[]}
+ *   sorted ascending by sortOrder. latestArticleAt/latestReplyAt feed the
+ *   board-list new-content indicator (見對話紀錄); blank when the board has
+ *   never had an article/reply posted since those columns were added.
  */
 function listBoards(spreadsheet) {
   var sheet = spreadsheet.getSheetByName('Boards');
@@ -21,13 +23,15 @@ function listBoards(spreadsheet) {
   if (lastRow < 2) {
     return [];
   }
-  var rows = sheet.getRange(2, 1, lastRow - 1, 4).getValues();
+  var rows = sheet.getRange(2, 1, lastRow - 1, 6).getValues();
   var boards = rows.map(function (row) {
     return {
       boardId: row[0],
       boardName: row[1],
       description: row[2],
-      sortOrder: row[3]
+      sortOrder: row[3],
+      latestArticleAt: row[4] || '',
+      latestReplyAt: row[5] || ''
     };
   });
   boards.sort(function (a, b) { return a.sortOrder - b.sortOrder; });

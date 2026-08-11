@@ -5,23 +5,29 @@
  * admin can reach this function (see deleteReplyForRole).
  */
 var _permissionsModule = (typeof require !== 'undefined') ? require('./permissions') : null;
+var _userStatsModule = (typeof require !== 'undefined') ? require('./userStats') : null;
 
 function gateByRoleFor_(role, allowedRoles) {
   return (_permissionsModule ? _permissionsModule.gateByRole : gateByRole)(role, allowedRoles);
 }
 
+function incrementUserStatFor_(usersSheet, userId, statName, delta) {
+  return (_userStatsModule ? _userStatsModule.incrementUserStat : incrementUserStat)(usersSheet, userId, statName, delta);
+}
+
 /**
- * Finds the row number for a reply, or null if not found.
+ * Finds the row number and author for a reply, or null if not found.
+ * 優化輪 ticket 08：多帶出 author，刪除時才知道要扣哪個使用者的 replyCount。
  */
-function findReplyRowNumber_(sheet, replyId) {
+function findReplyRowAndAuthor_(sheet, replyId) {
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) {
     return null;
   }
-  var ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
-  for (var i = 0; i < ids.length; i++) {
-    if (ids[i][0] === replyId) {
-      return i + 2;
+  var rows = sheet.getRange(2, 1, lastRow - 1, 3).getValues(); // A=replyId, B=articleId, C=author
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i][0] === replyId) {
+      return { rowNumber: i + 2, author: rows[i][2] };
     }
   }
   return null;
@@ -58,12 +64,13 @@ function deleteReply(spreadsheet, lock, articleId, replyId) {
   lock.waitLock(10000);
   try {
     var repliesSheet = spreadsheet.getSheetByName('Replies');
-    var replyRow = findReplyRowNumber_(repliesSheet, replyId);
-    if (replyRow === null) {
+    var found = findReplyRowAndAuthor_(repliesSheet, replyId);
+    if (found === null) {
       return { success: false, error: '回覆不存在' };
     }
 
-    repliesSheet.deleteRow(replyRow);
+    repliesSheet.deleteRow(found.rowNumber);
+    incrementUserStatFor_(spreadsheet.getSheetByName('Users'), found.author, 'replyCount', -1);
 
     var articlesSheet = spreadsheet.getSheetByName('Articles');
     var articleRow = findArticleRowNumber_(articlesSheet, articleId);
