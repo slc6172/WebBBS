@@ -6,9 +6,14 @@
 var _permissionsModule = (typeof require !== 'undefined') ? require('./permissions') : null;
 var _postArticleModule = (typeof require !== 'undefined') ? require('./postArticle') : null;
 var _imageStorageModule = (typeof require !== 'undefined') ? require('./imageStorage') : null;
+var _boardsModule = (typeof require !== 'undefined') ? require('./boards') : null;
 
-function gateByRoleFor_(role, allowedRoles) {
-  return (_permissionsModule ? _permissionsModule.gateByRole : gateByRole)(role, allowedRoles);
+function getRolePermissionsFor_(spreadsheet, role) {
+  return (_permissionsModule ? _permissionsModule.getRolePermissions : getRolePermissions)(spreadsheet, role);
+}
+
+function boardAllowsRoleByIdFor_(spreadsheet, boardId, role) {
+  return (_boardsModule ? _boardsModule.boardAllowsRoleById : boardAllowsRoleById)(spreadsheet, boardId, role);
 }
 
 function validateArticleTitleFor_(title) {
@@ -31,9 +36,13 @@ function deleteArticleImageFor_(drive, fileId) {
   return (_imageStorageModule ? _imageStorageModule.deleteArticleImage : deleteArticleImage)(drive, fileId);
 }
 
+function compactImageUrlsFor_(urls) {
+  return (_imageStorageModule ? _imageStorageModule.compactImageUrls : compactImageUrls)(urls);
+}
+
 /**
  * Finds the row number, current author, and image URLs for an articleId, or null.
- * 優化輪 ticket 10：多帶出 imageUrl1~3，編輯時才知道舊圖片是什麼，才能跟新的
+ * 優化輪 ticket 10：多帶出 imageUrls，編輯時才知道舊圖片是什麼，才能跟新的
  * 圖片清單比對出哪些被移除/替換掉了。
  */
 function findArticleRowAndAuthor_(sheet, articleId) {
@@ -41,17 +50,37 @@ function findArticleRowAndAuthor_(sheet, articleId) {
   if (lastRow < 2) {
     return null;
   }
-  var rows = sheet.getRange(2, 1, lastRow - 1, 12).getValues();
+  var rows = sheet.getRange(2, 1, lastRow - 1, 10).getValues();
   for (var i = 0; i < rows.length; i++) {
     if (rows[i][0] === articleId) {
       return {
         rowNumber: i + 2,
+        boardId: rows[i][1],
         author: rows[i][3],
-        imageUrls: [rows[i][9], rows[i][10], rows[i][11]].filter(function (u) { return u; })
+        imageUrls: parseImageUrlsCell_(rows[i][9])
       };
     }
   }
   return null;
+}
+
+/**
+ * 圖片張數突破：Articles 表的圖片欄位從 imageUrl1~3 三欄合併成單一個
+ * JSON 陣列字串欄位。空值的標準表示法是 '[]'；任何無法解析的內容（理論上
+ * 不該發生，防禦性處理）都當成沒有圖片，不噴錯。
+ * @param {string} cellValue
+ * @returns {Array<string>}
+ */
+function parseImageUrlsCell_(cellValue) {
+  if (!cellValue) {
+    return [];
+  }
+  try {
+    var parsed = JSON.parse(cellValue);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    return [];
+  }
 }
 
 /**
@@ -102,12 +131,18 @@ function editArticle(spreadsheet, requestingUserId, articleId, updates, isAdmin,
   sheet.getRange(row, 8, 1, 1).setValues([[requestingUserId]]); // H=editedBy
 
   if (updates.imageUrls) {
-    var newUrls = [updates.imageUrls[0] || '', updates.imageUrls[1] || '', updates.imageUrls[2] || ''];
-    sheet.getRange(row, 10, 1, 3).setValues([newUrls]); // J,K,L = imageUrl1~3
+    // 圖片張數突破：先把可能還留著空位的陣列（前端固定格子年代的殘留
+    // 語意，或編輯時某格被清空）壓成不留空缺的乾淨陣列，是最終要存進
+    // Sheets 的實際內容。安全性審查 M1 修復延伸：title/content 早就有
+    // escapeFormulaInjectionFor_，陣列裡每個元素一樣逐一套用——H3 修復
+    // 後這些值必須等於既有連結或剛上傳的 Drive 連結，正常情況下不會以
+    // =/+/-/@ 開頭，這裡是縱深防禦，不依賴 H3 的驗證是唯一防線。
+    var compactedUrls = compactImageUrlsFor_(updates.imageUrls);
+    var newUrls = compactedUrls.map(function (u) { return escapeFormulaInjectionFor_(u); });
+    sheet.getRange(row, 10, 1, 1).setValues([[JSON.stringify(newUrls)]]); // J = imageUrls（單一 JSON 欄位）
 
-    var newUrlSet = newUrls.filter(function (u) { return u; });
     found.imageUrls
-      .filter(function (oldUrl) { return newUrlSet.indexOf(oldUrl) === -1; }) // 舊圖沒出現在新清單裡 = 被移除或替換掉了
+      .filter(function (oldUrl) { return newUrls.indexOf(oldUrl) === -1; }) // 舊圖沒出現在新清單裡 = 被移除或替換掉了
       .forEach(function (oldUrl) {
         var fileId = extractFileIdFromUrlFor_(oldUrl);
         if (fileId) {
@@ -120,12 +155,29 @@ function editArticle(spreadsheet, requestingUserId, articleId, updates, isAdmin,
 }
 
 /**
- * Only role=user/admin may edit at all; the ownership check inside
- * editArticle still applies on top of this.
+ * admin bypasses everything below (Permission table + AllowRoles), same
+ * hardcoded special case as deleteArticle.js — this is the one deliberate
+ * exception the whole permission system carries, not something meant to
+ * be configurable via the Permission sheet.
+ * Non-admin roles need the articleManageOwn permission AND the article's
+ * own board's AllowRoles to allow them, on top of the ownership check
+ * already inside editArticle. Looking up the board here means reading
+ * the article row once more than editArticle's own lookup below — a
+ * small duplicate read accepted for a low-frequency action, not the
+ * cached high-frequency read path ticket 03 was built to protect.
  */
 function editArticleForRole(spreadsheet, role, requestingUserId, articleId, updates, drive) {
-  if (!gateByRoleFor_(role, ['user', 'admin'])) {
-    return { success: false, error: '權限不足' };
+  if (role !== 'admin') {
+    if (!getRolePermissionsFor_(spreadsheet, role).articleManageOwn) {
+      return { success: false, error: '權限不足' };
+    }
+    var found = findArticleRowAndAuthor_(spreadsheet.getSheetByName('Articles'), articleId);
+    if (!found) {
+      return { success: false, error: '文章不存在' };
+    }
+    if (!boardAllowsRoleByIdFor_(spreadsheet, found.boardId, role)) {
+      return { success: false, error: '權限不足' };
+    }
   }
   return editArticle(spreadsheet, requestingUserId, articleId, updates, role === 'admin', drive);
 }

@@ -5,6 +5,12 @@
  * 一張很小的表，不像文章列表需要整表掃描，沒有另外快取的必要。
  */
 
+var _permissionsModule = (typeof require !== 'undefined') ? require('./permissions') : null;
+
+function getRolePermissionsFor_(spreadsheet, role) {
+  return (_permissionsModule ? _permissionsModule.getRolePermissions : getRolePermissions)(spreadsheet, role);
+}
+
 /**
  * @param {Sheet} usersSheet
  * @returns {{loginCount: Array, articleCount: Array, replyCount: Array}}
@@ -57,6 +63,22 @@ function topThreeWithTies_(users, field) {
     .map(function (u) { return { userId: u.userId, value: u[field] }; });
 }
 
+/**
+ * Only roles with the Permission sheet's leaderboard permission get the
+ * real leaderboard; anyone else gets the same empty shape as an actually
+ * empty Users sheet. No AllowRoles involved here — the leaderboard is
+ * global, not scoped to any board.
+ * @param {Spreadsheet} spreadsheet
+ * @param {string|null} role
+ * @returns {{loginCount: Array, articleCount: Array, replyCount: Array}}
+ */
+function getLeaderboardForRole(spreadsheet, role) {
+  if (!getRolePermissionsFor_(spreadsheet, role).leaderboard) {
+    return { loginCount: [], articleCount: [], replyCount: [] };
+  }
+  return getLeaderboard(spreadsheet.getSheetByName('Users'));
+}
+
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { getLeaderboard: getLeaderboard };
+  module.exports = { getLeaderboard: getLeaderboard, getLeaderboardForRole: getLeaderboardForRole };
 }

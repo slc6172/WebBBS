@@ -49,7 +49,7 @@ test('createArticle force-escapes createdAt to plain text, since it always looks
   expect(rawRow[5]).toBe("'2026/07/30 12:00:00");
 });
 
-test('createArticle writes provided image URLs into imageUrl1~3 (optimization ticket 09)', () => {
+test('createArticle writes provided image URLs into the imageUrls column as a JSON array', () => {
   const ss = createFakeSpreadsheet();
   ensureSchema(ss);
   const lock = createFakeLock();
@@ -58,23 +58,52 @@ test('createArticle writes provided image URLs into imageUrl1~3 (optimization ti
     imageUrls: ['https://drive.example.com/file/1', 'https://drive.example.com/file/2']
   }));
 
-  const row = ss.getSheetByName('Articles').getRange(2, 1, 1, 12).getValues()[0];
-  expect(row[9]).toBe('https://drive.example.com/file/1');
-  expect(row[10]).toBe('https://drive.example.com/file/2');
-  expect(row[11]).toBe(''); // third slot left blank
+  const row = ss.getSheetByName('Articles').getRange(2, 1, 1, 10).getValues()[0];
+  expect(JSON.parse(row[9])).toEqual(['https://drive.example.com/file/1', 'https://drive.example.com/file/2']);
 });
 
-test('createArticle leaves imageUrl1~3 blank when no images were attached', () => {
+test('createArticle writes "[]" when no images were attached', () => {
   const ss = createFakeSpreadsheet();
   ensureSchema(ss);
   const lock = createFakeLock();
 
   createArticle(ss, lock, makeInput()); // no imageUrls field at all
 
-  const row = ss.getSheetByName('Articles').getRange(2, 1, 1, 12).getValues()[0];
-  expect(row[9]).toBe('');
-  expect(row[10]).toBe('');
-  expect(row[11]).toBe('');
+  const row = ss.getSheetByName('Articles').getRange(2, 1, 1, 10).getValues()[0];
+  expect(row[9]).toBe('[]');
+});
+
+// ---- 圖片張數突破：一般發文超過上限直接拒絕（不像 createArticleUnlocked_ 那樣默默截斷） ----
+
+test('createArticle rejects a submission with more than 99 images and does not write any row', () => {
+  const ss = createFakeSpreadsheet();
+  ensureSchema(ss);
+  const lock = createFakeLock();
+  const tooMany = [];
+  for (let i = 0; i < 100; i++) {
+    tooMany.push('https://drive.example.com/file/' + i);
+  }
+
+  const result = createArticle(ss, lock, makeInput({ imageUrls: tooMany }));
+
+  expect(result).toEqual({ success: false, error: '圖片數量超過上限' });
+  expect(ss.getSheetByName('Articles').getLastRow()).toBe(1);
+});
+
+test('createArticle accepts exactly 99 images', () => {
+  const ss = createFakeSpreadsheet();
+  ensureSchema(ss);
+  const lock = createFakeLock();
+  const exactlyMax = [];
+  for (let i = 0; i < 99; i++) {
+    exactlyMax.push('https://drive.example.com/file/' + i);
+  }
+
+  const result = createArticle(ss, lock, makeInput({ imageUrls: exactlyMax }));
+
+  expect(result).toEqual({ success: true });
+  const row = ss.getSheetByName('Articles').getRange(2, 1, 1, 10).getValues()[0];
+  expect(JSON.parse(row[9])).toHaveLength(99);
 });
 
 test('createArticle increments the author\'s articleCount in Users (optimization ticket 08)', () => {

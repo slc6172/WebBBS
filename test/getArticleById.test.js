@@ -13,12 +13,10 @@ function seedArticle(sheet, overrides) {
     editedAt: '',
     editedBy: '',
     replyCount: 0,
-    imageUrl1: '',
-    imageUrl2: '',
-    imageUrl3: ''
+    imageUrls: []
   };
   var a = Object.assign({}, defaults, overrides);
-  sheet.appendRow([a.articleId, a.boardId, a.title, a.author, a.content, a.createdAt, a.editedAt, a.editedBy, a.replyCount, a.imageUrl1, a.imageUrl2, a.imageUrl3]);
+  sheet.appendRow([a.articleId, a.boardId, a.title, a.author, a.content, a.createdAt, a.editedAt, a.editedBy, a.replyCount, JSON.stringify(a.imageUrls)]);
 }
 
 test('getArticleById returns the full article including content', () => {
@@ -35,9 +33,7 @@ test('getArticleById returns the full article including content', () => {
     createdAt: '2026/07/30 12:00:00',
     editedAt: '',
     editedBy: '',
-    imageUrl1: '',
-    imageUrl2: '',
-    imageUrl3: ''
+    imageUrls: []
   });
 });
 
@@ -55,20 +51,37 @@ test('getArticleById includes editedAt/editedBy for an article that has been edi
   expect(result.editedBy).toBe('alice01');
 });
 
-test('getArticleById includes populated image URLs (optimization ticket 09)', () => {
+test('getArticleById includes populated image URLs as an array (optimization ticket 09)', () => {
   const ss = createFakeSpreadsheet();
   ensureSchema(ss);
   seedArticle(ss.getSheetByName('Articles'), {
-    imageUrl1: 'https://drive.example.com/file/1',
-    imageUrl2: 'https://drive.example.com/file/2'
-    // imageUrl3 left blank — only 2 of the 3 slots used
+    imageUrls: ['https://drive.example.com/file/1', 'https://drive.example.com/file/2']
   });
 
   const result = getArticleById(ss, 'a1');
 
-  expect(result.imageUrl1).toBe('https://drive.example.com/file/1');
-  expect(result.imageUrl2).toBe('https://drive.example.com/file/2');
-  expect(result.imageUrl3).toBe('');
+  expect(result.imageUrls).toEqual(['https://drive.example.com/file/1', 'https://drive.example.com/file/2']);
+});
+
+test('getArticleById returns an empty imageUrls array when the article has no images', () => {
+  const ss = createFakeSpreadsheet();
+  ensureSchema(ss);
+  seedArticle(ss.getSheetByName('Articles'), {});
+
+  expect(getArticleById(ss, 'a1').imageUrls).toEqual([]);
+});
+
+// ---- 圖片張數突破 ----
+
+test('getArticleById returns more than 3 image URLs for a single article', () => {
+  const ss = createFakeSpreadsheet();
+  ensureSchema(ss);
+  const fiveUrls = ['1', '2', '3', '4', '5'].map(function (n) { return 'https://drive.example.com/file/' + n; });
+  seedArticle(ss.getSheetByName('Articles'), { imageUrls: fiveUrls });
+
+  const result = getArticleById(ss, 'a1');
+
+  expect(result.imageUrls).toEqual(fiveUrls);
 });
 
 test('getArticleById returns null when no article matches the id', () => {

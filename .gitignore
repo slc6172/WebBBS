@@ -1,0 +1,20 @@
+# 依賴套件，用 npm install 從 package-lock.json 重新產生，不進版控
+node_modules/
+
+# clasp 本機設定檔：scriptId 因人/因部署環境而異，README 的設定步驟
+# 假設這個檔案不會被提交（複製 .clasp.json.example 當起點）
+.clasp.json
+
+# clasp 登入後在使用者層級寫入的 OAuth 憑證檔案。正常情況下 clasp 會把
+# 它寫在使用者家目錄（~/.clasprc.json），不會出現在專案資料夾裡；這裡
+# 仍然加進來當一道保險，避免任何非預期的寫入位置意外被提交——這個檔案
+# 一旦外流等同外流你的 Google 帳號存取權杖，敏感度遠高於 .clasp.json。
+.clasprc.json
+
+# 作業系統/編輯器產生的雜項檔案
+.DS_Store
+Thumbs.db
+*.swp
+
+# 測試覆蓋率報告（若之後啟用 vitest coverage）
+coverage/

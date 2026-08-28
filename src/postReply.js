@@ -3,13 +3,26 @@
  * Reuses validateArticleContent/escapeFormulaInjection from
  * postArticle.js — replies share the same 10,000-char content rule and
  * the same formula-injection guard as articles.
+ *
+ * Perf-optimization ticket 02: createReply/createReplyForRole each read
+ * the Articles sheet at most once per call. The single read pulls
+ * columns A:I (articleId, boardId, ..., replyCount) in one range call,
+ * so the row number, the board's AllowRoles gate, and the current
+ * replyCount value all come from the same read — no separate lookup
+ * for "find the row" vs "find the boardId" vs "read the current count
+ * before incrementing it".
  */
 var _permissionsModule = (typeof require !== 'undefined') ? require('./permissions') : null;
 var _postArticleModule = (typeof require !== 'undefined') ? require('./postArticle') : null;
 var _userStatsModule = (typeof require !== 'undefined') ? require('./userStats') : null;
+var _boardsModule = (typeof require !== 'undefined') ? require('./boards') : null;
 
-function gateByRoleFor_(role, allowedRoles) {
-  return (_permissionsModule ? _permissionsModule.gateByRole : gateByRole)(role, allowedRoles);
+function getRolePermissionsFor_(spreadsheet, role) {
+  return (_permissionsModule ? _permissionsModule.getRolePermissions : getRolePermissions)(spreadsheet, role);
+}
+
+function boardAllowsRoleByIdFor_(spreadsheet, boardId, role) {
+  return (_boardsModule ? _boardsModule.boardAllowsRoleById : boardAllowsRoleById)(spreadsheet, boardId, role);
 }
 
 function incrementUserStatFor_(usersSheet, userId, statName, delta) {
@@ -25,18 +38,20 @@ function escapeFormulaInjectionFor_(value) {
 }
 
 /**
- * Finds which row (1-indexed) holds the given articleId in an
- * Articles-shaped sheet, skipping the header row. Returns null if not found.
+ * Finds an article's row number, boardId, and current replyCount in a
+ * single read of columns A:I, skipping the header row. Returns null if
+ * articleId isn't found. Used by both createReply (row + replyCount)
+ * and createReplyForRole (also needs boardId for the AllowRoles gate).
  */
-function findArticleRowNumber_(sheet, articleId) {
+function findArticleInfoForReply_(sheet, articleId) {
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) {
     return null;
   }
-  var ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
-  for (var i = 0; i < ids.length; i++) {
-    if (ids[i][0] === articleId) {
-      return i + 2;
+  var rows = sheet.getRange(2, 1, lastRow - 1, 9).getValues();
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i][0] === articleId) {
+      return { row: i + 2, boardId: rows[i][1], replyCount: rows[i][8] };
     }
   }
   return null;
@@ -44,8 +59,29 @@ function findArticleRowNumber_(sheet, articleId) {
 
 /**
  * Writes a new Replies row and increments the matching Articles row's
- * replyCount, both inside the same lock — not two separate locked
- * operations, one try/finally covering both writes.
+ * replyCount using an already-known row + current count (from
+ * findArticleInfoForReply_, read moments earlier under the same held
+ * lock — safe, since nothing else can shift Articles rows while this
+ * lock is held). Both writes happen inside the same lock as the caller.
+ */
+function writeReplyAtRow_(spreadsheet, articlesSheet, articleInfo, input) {
+  var repliesSheet = spreadsheet.getSheetByName('Replies');
+  repliesSheet.appendRow([
+    input.replyId,
+    input.articleId,
+    input.author,
+    escapeFormulaInjectionFor_(input.content),
+    "'" + input.createdAt
+  ]);
+
+  articlesSheet.getRange(articleInfo.row, 9, 1, 1).setValues([[articleInfo.replyCount + 1]]);
+
+  incrementUserStatFor_(spreadsheet.getSheetByName('Users'), input.author, 'replyCount', 1);
+
+  return { success: true };
+}
+
+/**
  * @param {Spreadsheet} spreadsheet
  * @param {Lock} lock
  * @param {{replyId: string, articleId: string, author: string, content: string, createdAt: string}} input
@@ -60,41 +96,55 @@ function createReply(spreadsheet, lock, input) {
   lock.waitLock(10000);
   try {
     var articlesSheet = spreadsheet.getSheetByName('Articles');
-    var articleRow = findArticleRowNumber_(articlesSheet, input.articleId);
-    if (articleRow === null) {
+    var articleInfo = findArticleInfoForReply_(articlesSheet, input.articleId);
+    if (articleInfo === null) {
       return { success: false, error: '文章不存在' };
     }
-
-    var repliesSheet = spreadsheet.getSheetByName('Replies');
-    repliesSheet.appendRow([
-      input.replyId,
-      input.articleId,
-      input.author,
-      escapeFormulaInjectionFor_(input.content),
-      "'" + input.createdAt
-    ]);
-
-    var replyCountCell = articlesSheet.getRange(articleRow, 9, 1, 1);
-    var currentCount = replyCountCell.getValues()[0][0];
-    replyCountCell.setValues([[currentCount + 1]]);
-
-    incrementUserStatFor_(spreadsheet.getSheetByName('Users'), input.author, 'replyCount', 1);
-
-    return { success: true };
+    return writeReplyAtRow_(spreadsheet, articlesSheet, articleInfo, input);
   } finally {
     lock.releaseLock();
   }
 }
 
 /**
- * Only role=user/admin may reply; anyone else is rejected before any
- * validation, lock, or write happens.
+ * Role needs the replyPost permission AND the AllowRoles of the board
+ * the target article belongs to must allow it. boardAllowsRoleByIdFor_
+ * already bypasses AllowRoles for admin internally, and admin naturally
+ * has replyPost=true in the Permission sheet by default — no separate
+ * isAdmin branch needed here (unlike editArticleForRole/
+ * deleteArticleForRole, which carry the extra "manage someone else's
+ * content" bypass that posting doesn't have).
+ *
+ * The AllowRoles gate is checked inside the lock (using the same
+ * Articles read as the row/replyCount lookup) rather than before
+ * acquiring it. replyPost is a global, board-independent permission
+ * check, so it still short-circuits before touching the lock at all;
+ * only the board-specific gate — which needs to know the article's
+ * boardId — waits until the read that also finds the row happens.
  */
 function createReplyForRole(spreadsheet, lock, role, input) {
-  if (!gateByRoleFor_(role, ['user', 'admin'])) {
+  if (!getRolePermissionsFor_(spreadsheet, role).replyPost) {
     return { success: false, error: '權限不足' };
   }
-  return createReply(spreadsheet, lock, input);
+  var contentCheck = validateArticleContentFor_(input.content);
+  if (!contentCheck.valid) {
+    return { success: false, error: contentCheck.error };
+  }
+
+  lock.waitLock(10000);
+  try {
+    var articlesSheet = spreadsheet.getSheetByName('Articles');
+    var articleInfo = findArticleInfoForReply_(articlesSheet, input.articleId);
+    if (articleInfo === null) {
+      return { success: false, error: '文章不存在' };
+    }
+    if (!boardAllowsRoleByIdFor_(spreadsheet, articleInfo.boardId, role)) {
+      return { success: false, error: '權限不足' };
+    }
+    return writeReplyAtRow_(spreadsheet, articlesSheet, articleInfo, input);
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 if (typeof module !== 'undefined' && module.exports) {

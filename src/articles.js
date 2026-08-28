@@ -2,9 +2,14 @@
  * Ticket 06 — article listing.
  */
 var _permissionsModule = (typeof require !== 'undefined') ? require('./permissions') : null;
+var _boardsModule = (typeof require !== 'undefined') ? require('./boards') : null;
 
-function gateByRoleFor_(role, allowedRoles) {
-  return (_permissionsModule ? _permissionsModule.gateByRole : gateByRole)(role, allowedRoles);
+function getRolePermissionsFor_(spreadsheet, role) {
+  return (_permissionsModule ? _permissionsModule.getRolePermissions : getRolePermissions)(spreadsheet, role);
+}
+
+function boardAllowsRoleByIdFor_(spreadsheet, boardId, role) {
+  return (_boardsModule ? _boardsModule.boardAllowsRoleById : boardAllowsRoleById)(spreadsheet, boardId, role);
 }
 
 /**
@@ -57,15 +62,23 @@ function listArticlesByBoard(spreadsheet, boardId) {
 }
 
 /**
- * Only role=user/admin get the real article list; anyone else (newbie
- * or not logged in) gets an empty array.
+ * Only roles with the Permission sheet's articleRead permission, AND
+ * whose AllowRoles the target board itself allows, get the real article
+ * list; anyone else (newbie, not logged in, or blocked by this specific
+ * board's AllowRoles) gets an empty array. boardId is trusted exactly as
+ * given — this must hold even for a boardId typed directly into a URL or
+ * called straight through google.script.run, bypassing the board list
+ * entirely.
  * @param {Spreadsheet} spreadsheet
  * @param {string|null} role
  * @param {string} boardId
  * @returns {Array}
  */
 function getArticlesForRole(spreadsheet, role, boardId) {
-  if (!gateByRoleFor_(role, ['user', 'admin'])) {
+  if (!getRolePermissionsFor_(spreadsheet, role).articleRead) {
+    return [];
+  }
+  if (!boardAllowsRoleByIdFor_(spreadsheet, boardId, role)) {
     return [];
   }
   return listArticlesByBoard(spreadsheet, boardId);

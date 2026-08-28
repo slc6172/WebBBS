@@ -7,6 +7,8 @@
 function createFakeSheet(name) {
   var rows = []; // 0-indexed array of arrays, mirrors a real sheet's 1-indexed grid
   var numberFormatCalls = []; // {row, col, numRows, numCols, format} — for verifying ensureSchema's plain-text fix
+  var dataValidationCalls = []; // {row, col, numRows, numCols, rule} — for verifying the role dropdown wiring
+  var readCount = 0; // incremented on each getValues()/getRawValues() call — mirrors a real Sheets API round-trip
 
   return {
     getName: function () {
@@ -26,6 +28,7 @@ function createFakeSheet(name) {
           }
         },
         getValues: function () {
+          readCount++;
           var out = [];
           for (var r = 0; r < numRows; r++) {
             var rowIndex = row - 1 + r;
@@ -48,6 +51,7 @@ function createFakeSheet(name) {
           return out;
         },
         getRawValues: function () {
+          readCount++;
           // Unlike getValues(), does NOT strip a leading apostrophe —
           // for tests that need to verify escaping happened at write
           // time (the raw stored content genuinely differs based on
@@ -72,6 +76,14 @@ function createFakeSheet(name) {
           // observable behavior available for ensureSchema's plain-text
           // fix to be verified against in these unit tests.
           numberFormatCalls.push({ row: row, col: col, numRows: numRows, numCols: numCols, format: format });
+        },
+        setDataValidation: function (rule) {
+          // Real Sheets' DataValidation object can't be modeled by this
+          // in-memory fake (it's built via the global SpreadsheetApp
+          // namespace, not via anything reachable from a Range); recording
+          // the call plus whatever rule object the caller handed us is the
+          // only observable behavior available here.
+          dataValidationCalls.push({ row: row, col: col, numRows: numRows, numCols: numCols, rule: rule });
         }
       };
     },
@@ -93,6 +105,12 @@ function createFakeSheet(name) {
     },
     _getNumberFormatCalls: function () {
       return numberFormatCalls;
+    },
+    _getDataValidationCalls: function () {
+      return dataValidationCalls;
+    },
+    _getReadCount: function () {
+      return readCount;
     }
   };
 }

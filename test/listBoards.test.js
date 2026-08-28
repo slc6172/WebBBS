@@ -16,8 +16,8 @@ test('listBoards returns all boards sorted by sortOrder ascending', () => {
   ]);
 
   expect(listBoards(ss)).toEqual([
-    { boardId: 'gossip', boardName: '八卦板', description: '閒聊', sortOrder: 1, latestArticleAt: '', latestReplyAt: '' },
-    { boardId: 'movie', boardName: '電影板', description: '討論電影', sortOrder: 2, latestArticleAt: '', latestReplyAt: '' }
+    { boardId: 'gossip', boardName: '八卦板', description: '閒聊', sortOrder: 1, latestArticleAt: '', latestReplyAt: '', allowRoles: '' },
+    { boardId: 'movie', boardName: '電影板', description: '討論電影', sortOrder: 2, latestArticleAt: '', latestReplyAt: '', allowRoles: '' }
   ]);
 });
 
@@ -27,7 +27,23 @@ test('listBoards returns latestArticleAt/latestReplyAt when populated (看板新
   ss.getSheetByName('Boards').appendRow(['gossip', '八卦板', '閒聊', 1, "'2026/08/05 10:00:00", "'2026/08/06 15:30:00"]);
 
   expect(listBoards(ss)).toEqual([
-    { boardId: 'gossip', boardName: '八卦板', description: '閒聊', sortOrder: 1, latestArticleAt: '2026/08/05 10:00:00', latestReplyAt: '2026/08/06 15:30:00' }
+    { boardId: 'gossip', boardName: '八卦板', description: '閒聊', sortOrder: 1, latestArticleAt: '2026/08/05 10:00:00', latestReplyAt: '2026/08/06 15:30:00', allowRoles: '' }
+  ]);
+});
+
+test('listBoards includes each board\'s AllowRoles value from the same existing bulk read (no extra per-board sheet access)', () => {
+  const ss = createFakeSpreadsheet();
+  ensureSchema(ss);
+  ss.getSheetByName('Boards').appendRow(['gossip', '八卦板', '閒聊', 1, '', '', 'user,admin']);
+  ss.getSheetByName('Boards').appendRow(['movie', '電影板', '討論電影', 2, '', '', 'ALL']);
+  ss.getSheetByName('Boards').appendRow(['secret', '密板', '尚未設定', 3, '', '', '']);
+
+  const boards = listBoards(ss);
+
+  expect(boards.map(b => ({ boardId: b.boardId, allowRoles: b.allowRoles }))).toEqual([
+    { boardId: 'gossip', allowRoles: 'user,admin' },
+    { boardId: 'movie', allowRoles: 'ALL' },
+    { boardId: 'secret', allowRoles: '' }
   ]);
 });
 

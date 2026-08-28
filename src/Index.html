@@ -96,6 +96,48 @@
       background-color: #ffffff;
     }
 
+    /* ---- 跳頁 pager bar：桌面/手機共用同一套，靠 flex 自然縮放，不需要另開
+       @media 斷點——三個元件（◀／頁碼指示／▶）本身就夠窄，left-panel 在手機版
+       是 100% 寬（見上面的 767px media query），一樣塞得下。頁碼指示中間那顆
+       故意做成「按下去可以跳頁」的按鈕，不是純文字，參考 GitHub / Gmail 之類
+       清單分頁常見的「當前頁 / 總頁數」可點擊樣式。 */
+    .article-pager-bar {
+      display: none; /* 預設隱藏；只有 totalPages > 1 時 renderPagerBar() 才會顯示，見 Index.html JS */
+      align-items: center;
+      gap: 6px;
+      margin-top: 6px;
+      flex-shrink: 0;
+    }
+    .pager-arrow-btn {
+      background: none;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      color: #334155;
+      width: 30px;
+      height: 28px;
+      flex-shrink: 0;
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
+    .pager-arrow-btn:hover:not(:disabled) { background-color: #f1f5f9; }
+    .pager-arrow-btn:disabled { color: #cbd5e1; border-color: #e2e8f0; cursor: default; }
+    .pager-page-indicator {
+      flex: 1;
+      min-width: 0; /* 讓 text-overflow 在窄寬度下真的生效 */
+      background: none;
+      border: 1px solid #e2e8f0;
+      border-radius: 4px;
+      padding: 4px 6px;
+      font-size: 0.8rem;
+      color: #475569;
+      text-align: center;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      cursor: pointer;
+    }
+    .pager-page-indicator:hover { background-color: #f8fafc; border-color: #cbd5e1; }
+
     /* 單筆文章高密度樣式 (36px 高) */
     .article-item {
       padding: 6px 10px;
@@ -230,6 +272,7 @@
     .reply-item .reply-content {
       font-size: 0.9rem;
       color: #1e293b;
+      white-space: pre-wrap;
     }
 
     /* 發送回覆區 */
@@ -284,6 +327,32 @@
       padding: 4px 0;
     }
 
+    /* ---- 手機導覽補強輪 ticket 01：手機版「上一篇／下一篇」固定按鈕 ----
+       桌面版原本用 ↑/↓ 快捷鍵切換文章（見 JS 的 selectAdjacentArticle_），
+       手機版沒有實體鍵盤，改用畫面上的固定按鈕當主要入口（另外還有滑動
+       手勢，見 ticket 02 的 JS 說明）。按鈕永遠存在、用 disabled 表示
+       「已經是最新/最舊一篇」，不是整顆按鈕隱藏——窄螢幕上隱藏按鈕容易
+       讓版面跳動、手指也容易撲空點到別的東西，disabled 態就地顯示比較
+       穩定。跟既有的 .pager-arrow-btn（翻頁箭頭鍵）配色一致但不共用同一個
+       class：翻頁鍵是固定寬度的圖示鍵，這裡是要左右平分寬度的文字按鈕，
+       排版邏輯不同，共用 class 之後兩邊要各自微調反而綁手綁腳。 */
+    .mobile-article-nav-bar {
+      display: none; /* 預設隱藏（含桌面版）；只有手機版斷點內、detail 畫面才顯示，見下方 media query */
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .mobile-article-nav-btn {
+      flex: 1;
+      background: none;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      color: #334155;
+      padding: 7px 8px;
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
+    .mobile-article-nav-btn:disabled { color: #cbd5e1; border-color: #e2e8f0; cursor: default; }
+
     /* ---- ticket 02：手機版頂列「⋯」選單 ---- */
     /* 這條規則必須放在下面的 @media 區塊「之前」——兩條規則優先權(specificity)一樣，
        CSS 是「後面的贏」，如果這條放在 @media 後面，會把 @media 裡想要顯示它的
@@ -313,6 +382,7 @@
       body.mobile-list .right-panel { display: none; }
       body.mobile-detail .left-panel { display: none; }
       body.mobile-detail .mobile-back-btn { display: inline-block; }
+      body.mobile-detail .mobile-article-nav-bar { display: flex; }
 
       /* ticket 02：手機版改用浮動 ➕ + 全螢幕發文頁，隱藏舊的內嵌折疊發文區 */
       #btnTogglePost, #postArticleForm { display: none !important; }
@@ -322,6 +392,24 @@
       body.mobile-detail .mobile-fab { display: flex; }
 
       .mobile-more-btn { display: inline-flex; }
+
+      /* 手機版標題列：分享／LINE／編輯／刪除按鈕改佔獨立一列（顯示在上方），
+         標題文字獨立佔下一列、有全部寬度可用，不會再被按鈕擠壓導致被迫換行。
+         用 column-reverse 讓 DOM 順序（標題 span 在前、按鈕 div 在後）視覺上
+         反過來變成「按鈕列在上、標題列在下」，不用動 JS 產生 HTML 的順序。
+         這個元素本身有 style="...align-items:flex-start; gap:12px;" 這條行內
+         樣式，行內樣式優先權天生高於這裡的一般 CSS 規則——flex-direction
+         沒有行內衝突可以正常套用，但 align-items/gap 這兩個屬性如果不加
+         !important 會被行內樣式蓋掉，實際上不會生效（gap 會停在原本的
+         12px，不是這裡想要的 8px）。 */
+      .article-detail-card .header-title {
+        flex-direction: column-reverse;
+        align-items: stretch !important;
+        gap: 8px !important;
+      }
+      .article-detail-card .header-title > div {
+        justify-content: flex-end;
+      }
     }
 
     /* ---- ticket 02：手機版浮動發文按鈕 ---- */
@@ -556,7 +644,8 @@
     .article-images img {
       width: 120px;
       height: 120px;
-      object-fit: cover;
+      object-fit: contain; /* 完整顯示不裁切；cover 無論裁切錨點放哪都可能裁掉主體，改用 contain 保證縮圖看得到完整內容 */
+      background-color: #f1f5f9; /* 非正方形圖片的留白區域，跟站內其他中性色一致 */
       border-radius: 6px;
       border: 1px solid #e2e8f0;
       cursor: pointer;
@@ -592,6 +681,62 @@
       z-index: 61;
     }
 
+    /* ---- 輕量提示（app-toast）：取代 alert() 用來顯示「已複製」「發文失敗」之類的
+       確認/錯誤訊息。原本用 alert()／prompt() 顯示分享連結時，手機瀏覽器會把 GAS
+       沙盒 iframe 的真實網域（...script.googleusercontent.com）當成對話框標題一起
+       顯示出來，看起來很雜亂——這是原生對話框的瀏覽器行為，JS 無法關掉，唯一的
+       辦法是完全不用 alert()／prompt()／confirm()，改用自己畫的元素。z-index 故意
+       比所有既有彈窗都高，確保就算在彈窗裡按下觸發，提示還是會蓋在最上層。
+       error 樣式（紅底）用在失敗訊息，維持比預設稍長的顯示時間——失敗訊息通常
+       比「已複製」這種確認訊息長，需要多一點時間讀完（見 showToast 的 duration 參數）。 */
+    .app-toast {
+      position: fixed;
+      left: 50%;
+      bottom: 24px;
+      transform: translateX(-50%) translateY(12px);
+      background: rgba(30, 41, 59, 0.92);
+      color: #fff;
+      padding: 10px 18px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      z-index: 100;
+      opacity: 0;
+      transition: opacity 0.2s ease, transform 0.2s ease;
+      pointer-events: none;
+      max-width: 85vw;
+      text-align: center;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    }
+    .app-toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+    .app-toast.error {
+      background: rgba(185, 28, 28, 0.94);
+    }
+
+    /* ---- 通用確認彈窗（confirmPopup）：取代 confirm()，理由同上方 app-toast 的
+       說明。沿用 .board-list-popup 的彈窗外殼，內容區自訂成「訊息 + 取消/確定」
+       兩顆按鈕的簡單版面。 */
+    .confirm-popup-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 4px;
+    }
+    .confirm-popup-actions button {
+      flex: 1;
+      padding: 8px;
+    }
+    button.btn-danger {
+      background-color: #dc2626;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: 500;
+    }
+    button.btn-danger:hover { background-color: #b91c1c; }
+
     /* ---- 修正圖片選擇框排版 ---- */
     .edit-image-slots {
       display: flex;
@@ -612,7 +757,8 @@
       width: 100%; /* 寬高隨容器等比例縮放 */
       aspect-ratio: 1 / 1; /* 維持正方形 */
       height: auto;
-      object-fit: cover;
+      object-fit: contain; /* 跟 .article-images img 一致：完整顯示不裁切，避免預覽跟實際上傳內容不一致 */
+      background-color: #f1f5f9;
       border-radius: 6px;
       border: 1px solid #e2e8f0;
       box-sizing: border-box;
@@ -657,6 +803,15 @@
         <button type="button" class="board-list-btn" onclick="openBoardListPopup()" title="看板列表">📋 看板列表</button>
       </div>
 
+      <!-- 跳頁 bar：只有看板文章數超過一頁才會顯示（見 renderPagerBar），放在列表
+           正上方而不是像「載入更早的文章」那樣放在清單最下面，是因為文章一多，
+           使用者不太可能願意先滑到底才找到跳頁入口 -->
+      <div class="article-pager-bar" id="articlePagerBar">
+        <button type="button" class="pager-arrow-btn" id="pagerPrevBtn" onclick="pagerGoRelative(-1)" title="回到較新的一頁">◀</button>
+        <button type="button" class="pager-page-indicator" id="pagerPageIndicator" onclick="openPageJumpPopup()"></button>
+        <button type="button" class="pager-arrow-btn" id="pagerNextBtn" onclick="pagerGoRelative(1)" title="翻到較舊的一頁">▶</button>
+      </div>
+
       <!-- 文章標題列表 (單行高密度) -->
       <div class="article-list-wrapper" id="articleList">
         <div class="placeholder-msg" style="margin-top: 40px; font-size: 0.9rem;">請選擇看板</div>
@@ -673,11 +828,11 @@
         <input type="text" id="newArticleTitle" placeholder="文章標題" />
         <textarea id="newArticleContent" placeholder="撰寫文章內容..."></textarea>
         <div class="image-upload-box">
-          <label class="image-upload-label">📷 附加圖片（最多 3 張，jpg/png/gif/webp，單張上限 5MB）</label>
+          <label class="image-upload-label">📷 附加圖片（最多 99 張，jpg/png/gif/webp，單張上限 5MB；可點選、拖曳或貼上剪貼簿圖片，選多了會自動分批上傳，不用自己拆）</label>
           <div id="newArticleImageSlotsContainer"></div>
           <div class="image-upload-warning">⚠️ 圖片連結為公開分享連結（知道連結就能看），請勿上傳含敏感內容的圖片</div>
         </div>
-        <button class="btn-primary" onclick="handlePostArticle()">發布文章</button>
+        <button class="btn-primary" id="btnSubmitPostArticle" onclick="handlePostArticle()">發布文章</button>
       </div>
     </section>
 
@@ -701,11 +856,11 @@
       <input type="text" id="mobileNewArticleTitle" placeholder="文章標題" />
       <textarea id="mobileNewArticleContent" placeholder="撰寫文章內容..."></textarea>
       <div class="image-upload-box">
-        <label class="image-upload-label">📷 附加圖片（最多 3 張，jpg/png/gif/webp，單張上限 5MB）</label>
+        <label class="image-upload-label">📷 附加圖片（最多 99 張，jpg/png/gif/webp，單張上限 5MB；可點選、拖曳或貼上剪貼簿圖片，選多了會自動分批上傳，不用自己拆）</label>
         <div id="mobileNewArticleImageSlotsContainer"></div>
         <div class="image-upload-warning">⚠️ 圖片連結為公開分享連結（知道連結就能看），請勿上傳含敏感內容的圖片</div>
       </div>
-      <button class="btn-primary" onclick="handleMobilePostArticle()">發布文章</button>
+      <button class="btn-primary" id="btnSubmitMobilePostArticle" onclick="handleMobilePostArticle()">發布文章</button>
     </div>
   </section>
 
@@ -717,6 +872,64 @@
         <button type="button" class="board-list-popup-close" onclick="closeBoardListPopup()">✕</button>
       </div>
       <div class="board-list-popup-body" id="boardListPopupBody"></div>
+    </div>
+  </div>
+
+  <!-- 跳頁彈窗：沿用看板列表彈窗同一套 .board-list-popup 樣式（手機/桌面都已經是
+       置中、90% 寬、max-width 420px，不需要再另外處理窄寬度） -->
+  <div class="board-list-popup" id="pageJumpPopup" onclick="if (event.target === this) closePageJumpPopup()">
+    <div class="board-list-popup-content" style="max-width: 300px;">
+      <div class="board-list-popup-header">
+        <h3>跳到指定頁</h3>
+        <button type="button" class="board-list-popup-close" onclick="closePageJumpPopup()">✕</button>
+      </div>
+      <div class="board-list-popup-body" style="padding: 14px 16px; display: flex; flex-direction: column; gap: 10px;">
+        <div id="pageJumpHint" style="font-size: 0.85rem; color: #64748b;"></div>
+        <div style="display: flex; gap: 8px;">
+          <input type="number" id="pageJumpInput" min="1" step="1" inputmode="numeric"
+                 style="flex: 1; min-width: 0; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 1rem;"
+                 onkeydown="if (event.key === 'Enter') submitPageJump()">
+          <button type="button" class="btn-primary" onclick="submitPageJump()">跳頁</button>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button type="button" class="secondary" style="flex: 1;" onclick="jumpToPage(currentBoardId, 0)">⏮ 回到最新</button>
+          <button type="button" class="secondary" style="flex: 1;" onclick="jumpToLastPage()">⏭ 跳到最早</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 分享連結彈窗：navigator.share 不支援、或連 navigator.clipboard 都失敗時的最後手段，
+       取代原本的 prompt()——原生 prompt() 在手機上會把 GAS 沙盒 iframe 的網域當標題
+       顯示出來，改用自己畫的彈窗完全避開這個問題。輸入框設唯讀＋點擊全選，方便使用者
+       長按手動複製。 -->
+  <div class="board-list-popup" id="shareLinkPopup" onclick="if (event.target === this) closeShareLinkPopup()">
+    <div class="board-list-popup-content" style="max-width: 340px;">
+      <div class="board-list-popup-header">
+        <h3>分享文章連結</h3>
+        <button type="button" class="board-list-popup-close" onclick="closeShareLinkPopup()">✕</button>
+      </div>
+      <div class="board-list-popup-body" style="padding: 14px 16px; display: flex; flex-direction: column; gap: 10px;">
+        <div style="font-size: 0.85rem; color: #64748b;">沒有觀看權限的人打開會看不到內容</div>
+        <input type="text" id="shareLinkInput" readonly onclick="this.select();"
+               style="padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 0.85rem; color: #1e293b;">
+        <button type="button" class="btn-primary" onclick="copyShareLinkFromPopup()">複製連結</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 通用確認彈窗：取代 confirm()，理由見上方 .app-toast 的說明。訊息文字跟「確定」
+       按鈕點下去要做的事，都由呼叫 showConfirm() 的地方臨時指定，這個彈窗本身不
+       綁定任何特定操作。 -->
+  <div class="board-list-popup" id="confirmPopup" onclick="if (event.target === this) closeConfirmPopup()">
+    <div class="board-list-popup-content" style="max-width: 320px;">
+      <div class="board-list-popup-body" style="padding: 20px 16px 16px;">
+        <div id="confirmPopupMessage" style="font-size: 0.95rem; color: #1e293b; margin-bottom: 4px;"></div>
+        <div class="confirm-popup-actions">
+          <button type="button" class="secondary" onclick="closeConfirmPopup()">取消</button>
+          <button type="button" class="btn-danger" onclick="handleConfirmPopupYes()">確定</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -739,11 +952,33 @@
 
   <script>
     // 全域變數狀態
-    var bootstrapData = <?!= bootstrapDataJson ?>;   // doGet 解析出的 {boardId?, articleId?}，供分享連結深連結使用
+    // 安全性審查 H1 修復＋實際部署後的追加修正（見對話紀錄）：這兩個值
+    // 用「不跳脫」樣板插值語法直接印成這個區塊裡的變數宣告，但 Code.js 的
+    // toSafeScriptJson_ 已經在伺服器端手動把 JSON 字串裡的尖括號跟 & 轉成
+    // \u003c 之類的跳脫序列，攻擊者可控的字元不可能組出「提前關閉這個區塊」
+    // 的序列（即使 parseBootstrapParams 已經做了白名單驗證，這裡仍維持
+    // 縱深防禦，不依賴單一防線）。曾經試過改放進 body 標籤的 data-* 屬性、
+    // 交給 GAS 樣板引擎的「跳脫版」插值語法自動處理，但那套 contextual
+    // autoescaper 對自訂 data-* 屬性的情境判斷不可靠，會誤判成網址情境、
+    // 把整個值替換成內部的安全佔位字串，導致前端解析直接壞掉——所以改回
+    // 這裡手動跳脫、直接印成變數宣告的寫法。
+    // 另外要注意：這個區塊裡（含註解文字）不能再出現樣板插值語法本身的
+    // 兩種寫法，或是指令碼標籤的開闔文字——GAS 編譯樣板時是整份檔案掃描
+    // 這些記號，不理解這裡是註解，寫出來就會讓整份樣板編譯錯亂（這正是
+    // 這次追加修正要處理的另一個問題，不是憑空的潔癖）。
+    var bootstrapData = <?!= bootstrapDataJson ?>;   // doGet 解析出的 {boardId?, articleId?}，供分享連結深連結使用（Code.js 的 toSafeScriptJson_ 已經手動跳脫過，這裡用不跳脫版印出）
     var scriptBaseUrl = <?!= scriptUrlJson ?>;   // 真正對外的網址，沙盒 iframe 裡的 location.href 不能用
     var currentToken = sessionStorage.getItem('bbs_token') || '';
     var currentUserId = '';
     var currentRole = '';
+    var currentPermissions = {}; // 權限系統 ticket 10：取代 04/05/07/08 各自的 currentCanXxx 旗標，
+    // 收斂成一份完整的權限物件（articleRead/articlePost/articleManageOwn/
+    // replyRead/replyPost/replyDeleteOwn/leaderboard/login）。這裡每一項都
+    // 只是全域權限，不含任何特定看板的 AllowRoles——AllowRoles 是每個看板
+    // 共用同一個值控管全部 6 種板內動作，使用者能在下拉選單選到的看板／看
+    // 得到的文章，本來就已經通過同一個 AllowRoles 的讀取檢查了，這裡不需要
+    // 重複算。真正送出動作時，後端各自的 *ForRole 函式依然會重新驗證目標看
+    // 板的 AllowRoles，不因為這裡顯示了按鈕就跳過。
     // 優化輪 ticket 07：登入次數/上次登入時間是「這次登入當下」的快照，存 sessionStorage
     // 讓同一個分頁重新整理頁面時還能沿用同一份顯示，不會因為重讀網頁就消失或重新查詢
     var currentLoginCount = sessionStorage.getItem('bbs_login_count') || '';
@@ -753,7 +988,7 @@
     var allBoards = []; // ticket 06：loadBoards() 存一份在這裡，看板列表彈窗直接複用，不用另外查詢
     var lastArticleDetail = null;   // 暫存目前顯示中的文章資料，編輯模式切換時不用重打一次 RPC
     var isEditingArticle = false;
-    var editImageSlots = ['', '', '']; // ticket 10：編輯文章時暫存的 3 個圖片格狀態
+    var editImageList = []; // 圖片張數突破：編輯文章時暫存的圖片清單狀態，原本是固定 3 格
 
     // ---- 響應式版面：斷點判斷與導覽狀態 (ticket 01) ----
     // 這兩個函式刻意寫成純函式（輸入輸出明確、不碰 DOM），方便之後如果要補測試可以直接抽出來用；
@@ -812,7 +1047,7 @@
       applyBodyClasses();
       document.getElementById('mobileNewArticleTitle').value = '';
       document.getElementById('mobileNewArticleContent').value = '';
-      mobileNewArticleImageSlots = ['', '', ''];
+      mobileNewArticleImageList = [];
       renderMobileNewArticleImageSlots();
     }
 
@@ -984,9 +1219,11 @@
 
     // 1. 檢查並更新使用者權限狀態
     function checkUserStatus() {
-      google.script.run.withSuccessHandler(function(status) {
+      google.script.run.withSuccessHandler(function(json) {
+        var status = JSON.parse(json); // 權限系統 ticket 10：getMyStatus 現在含巢狀物件，改回 JSON.stringify/parse
         currentRole = status.role;
         currentUserId = status.userId;
+        currentPermissions = status.permissions || {};
         renderTopUserPanel();
         loadBoards();
       }).getMyStatus(currentToken);
@@ -1009,18 +1246,25 @@
         // 優化輪 ticket 07：手機版收進「⋯」選單裡的資訊列，跟桌面版顯示同一份資料
         registerMoreMenuItem('loginStats', '🔑 ' + loginStatsText, null);
 
-        // ticket 08：排行榜只對 user/admin 開放，跟看板內容的權限限制一致，newbie 看不到
-        // 追加修正：發文入口（手機浮動 ➕、桌面「+ 發表新文章」）也是同樣道理——
-        // newbie/未登入點了送出一定會被後端權限擋下，乾脆前端就不給點，不用等
-        // 使用者填完表單才碰壁
-        if (currentRole === 'user' || currentRole === 'admin') {
+        // 權限系統 ticket 08：排行榜按鈕改依後端回傳的 canViewLeaderboard 動態
+        // 判斷，取代原本寫死的 role 字串比對，跟發文按鈕（ticket 04）各自獨立
+        // 判斷，不再共用同一個條件式
+        if (currentPermissions.leaderboard) {
           if (leaderboardBtn) leaderboardBtn.style.display = '';
           registerMoreMenuItem('leaderboard', '🏆 排行榜', openLeaderboardPopup);
-          if (mobileFabBtn) mobileFabBtn.style.display = '';
-          if (btnTogglePost) btnTogglePost.style.display = '';
         } else {
           if (leaderboardBtn) leaderboardBtn.style.display = 'none';
           unregisterMoreMenuItem('leaderboard');
+        }
+
+        // 權限系統 ticket 04：發文入口（手機浮動 ➕、桌面「+ 發表新文章」）改依
+        // 後端回傳的 canPostArticle 動態判斷，取代原本寫死的 role 字串比對——
+        // newbie/未登入本來就 canPostArticle 一定是 false，行為不變，只是判斷
+        // 依據換成 Permission 表，之後角色可以自由設定
+        if (currentPermissions.articlePost) {
+          if (mobileFabBtn) mobileFabBtn.style.display = '';
+          if (btnTogglePost) btnTogglePost.style.display = '';
+        } else {
           if (mobileFabBtn) mobileFabBtn.style.display = 'none';
           if (btnTogglePost) btnTogglePost.style.display = 'none';
         }
@@ -1099,11 +1343,10 @@
 
         loadArticles(currentBoardId);
         markBoardEntered(currentBoardId);
-
-        // 深連結：網址帶了 ?article= 就直接開啟該篇文章
-        if (bootstrapData.articleId) {
-          selectArticle(bootstrapData.articleId, null);
-        }
+        // 效能優化 ticket 05：深連結的 ?article= 現在改成在 loadArticles 的批量資料
+        // 真的載回來之後才觸發（見 openDeepLinkedArticleIfPending），不能像以前一樣
+        // 在這裡就直接呼叫——文章詳情不再各自獨立呼叫伺服器，要等所屬看板的批量
+        // 資料進了本地快取才有東西可以渲染。
       }).getBoardsFromToken(currentToken);
     }
 
@@ -1116,15 +1359,50 @@
       markBoardEntered(currentBoardId);
     }
 
-    // 優化輪 ticket 03（#1a）：本次 session 已經完整讀取過的看板文章列表快取，
-    // key 是 boardId，value 是 { version, articles }。重新整理頁面會清空（預期行為，
-    // 之後再進來視同本次 session 第一次讀取該看板）。
-    var boardArticleCache = {};
+    // 效能優化 ticket 05：整版批量快取，取代原本各自獨立的 boardArticleCache
+    // （列表，優化輪 ticket 03）與 articleDetailCache（詳情，優化輪 ticket 04）。
+    // key 是 boardId，value 是
+    // { baseIndex, pages: [{version, articles, repliesByArticleId}, ...], hasMore, totalCount, pageSize }。
+    // pages[0] 這張 ticket 交付時永遠只有一頁；ticket 06 之後點「載入更早的文章」
+    // 會往陣列後面 push 新的一頁。重新整理頁面會清空（預期行為，之後再進來視同
+    // 本次 session 第一次讀取該看板）。
+    //
+    // 跳頁功能新增了 baseIndex：pages[0] 實際對應到後端哪個 pageIndex（0-based）。
+    // 平常（沒跳過頁）baseIndex 永遠是 0，跟原本的假設完全一致；使用者跳頁後，
+    // pages 陣列會被整個換成「跳過去的那一頁」單獨一份，baseIndex 記錄那一頁的
+    // 真實 pageIndex，「載入更早的文章」則接著從 baseIndex + pages.length 繼續往
+    // 後累加，兩種操作方式並存（見 jumpToPage / loadMoreArticles）。totalCount /
+    // pageSize 是跳頁 UI 用來換算「共幾頁」的數字，來自 getBoardBulkPage 順手回傳
+    // 的既有計算結果（不是額外的讀取或運算，見 boardBulk.js）。
+    var boardBulkCache = {};
+
+    // 在已載入的所有頁次裡找一篇文章，回傳所在頁次索引與文章物件本身；找不到回傳
+    // null。編輯/刪除/回覆的目標文章不一定在 pages[0]（ticket 06 之後翻頁載入的舊
+    // 文章一樣可以被編輯），所以要跨頁找，不能只看第一頁。
+    function findCachedArticleLocation_(boardId, articleId) {
+      var entry = boardBulkCache[boardId];
+      if (!entry) return null;
+      for (var p = 0; p < entry.pages.length; p++) {
+        var article = entry.pages[p].articles.find(function(a) { return a.articleId === articleId; });
+        if (article) return { pageIndex: p, article: article };
+      }
+      return null;
+    }
+
+    // 圖片張數突破輪 ticket 02：從 renderArticleListFromCache 抽出來的共用小函式
+    // ——把目前看板已載入的所有頁次攤平成單一陣列，DOM 渲染順序（新到舊）跟
+    // 這個陣列順序保證一致（renderArticleListFromCache 就是照這個順序逐一
+    // appendChild），鍵盤上下鍵導覽靠這個順序找上一篇/下一篇。
+    function currentBoardArticlesFlat_(boardId) {
+      var entry = boardBulkCache[boardId];
+      return entry ? entry.pages.reduce(function(acc, page) { return acc.concat(page.articles); }, []) : [];
+    }
 
     function renderArticleListFromCache(boardId) {
       var listContainer = document.getElementById('articleList');
-      var entry = boardArticleCache[boardId];
-      var articles = entry ? entry.articles : [];
+      var articles = currentBoardArticlesFlat_(boardId);
+
+      renderPagerBar(boardId);
 
       if (articles.length === 0) {
         listContainer.innerHTML = '<div class="placeholder-msg" style="margin-top: 40px; font-size: 0.9rem;">此看板尚無文章</div>';
@@ -1147,32 +1425,225 @@
         `;
         listContainer.appendChild(div);
       });
+
+      // 效能優化 ticket 06：hasMore 為 true 時,列表最下方加一顆「載入更早的文章」
+      // 按鈕。沒有更多可載入（包含這個看板文章數本來就沒超過批次上限，第一批的
+      // hasMore 一開始就是 false）時完全不出現，使用者感覺不到任何差異。
+      if (boardBulkCache[boardId] && boardBulkCache[boardId].hasMore) {
+        var loadMoreBtn = document.createElement('button');
+        loadMoreBtn.id = 'loadMoreArticlesBtn';
+        loadMoreBtn.className = 'secondary';
+        loadMoreBtn.style.cssText = 'display:block; width:100%; margin-top:8px;';
+        loadMoreBtn.textContent = '載入更早的文章';
+        loadMoreBtn.onclick = function() { loadMoreArticles(boardId); };
+        listContainer.appendChild(loadMoreBtn);
+      }
     }
 
-    // 本人發文成功後直接本地插入，不重新呼叫 getArticlesFromToken；
-    // 新文章排最前面，跟伺服器端「newest first」排序一致
+    // 點「載入更早的文章」：以下一個還沒讀過的頁次（entry.pages.length，0-based）
+    // 呼叫批量端點，成功後把新的一頁 push 進既有陣列——只新增，不覆蓋、不重複
+    // 讀取已經在 pages 裡的頁次。這一頁本來就還沒載入過，沒有已知版本值可以帶，
+    // 一定會整批回傳（不會有 res.unchanged 的情況，這點跟 loadArticles 對第 0 頁
+    // 的版本比對不同）。
+    function loadMoreArticles(boardId) {
+      var entry = boardBulkCache[boardId];
+      if (!entry || !entry.hasMore) return; // 沒有更多可載入，或這個看板還沒有任何頁次資料，理論上按鈕不會被畫出來，這裡是保險
+      // 跳頁功能後，pages[0] 不一定是後端真正的第 0 頁（見 boardBulkCache 開頭的
+      // 說明），下一頁要接著 baseIndex 往後算，不能只看 entry.pages.length
+      var nextPageIndex = entry.baseIndex + entry.pages.length;
+
+      var btn = document.getElementById('loadMoreArticlesBtn');
+      if (btn) { btn.disabled = true; btn.textContent = '載入中...'; }
+
+      google.script.run.withSuccessHandler(function(json) {
+        var res = {};
+        try { res = JSON.parse(json || '{}'); } catch (e) { res = {}; }
+
+        entry.pages.push({ version: res.version, articles: res.articles || [], repliesByArticleId: res.repliesByArticleId || {} });
+        entry.hasMore = !!res.hasMore;
+        // 理論上總數在這個過程中不會變，但如果剛好有人同時發文/刪文，讓跳頁 UI
+        // 的「共幾頁」順手用最新一次讀取結果校正，而不是一直沿用第一次讀到的數字
+        if (typeof res.totalCount === 'number') entry.totalCount = res.totalCount;
+        if (typeof res.pageSize === 'number') entry.pageSize = res.pageSize;
+
+        renderArticleListFromCache(boardId);
+      }).withFailureHandler(function(err) {
+        if (btn) { btn.disabled = false; btn.textContent = '載入更早的文章'; }
+        showToast('載入更早的文章失敗，請稍後再試: ' + err.message, 'error');
+      }).getBoardBulkFromToken(currentToken, boardId, nextPageIndex, '');
+    }
+
+    // ---- 跳頁功能 ----
+    // 跟「載入更早的文章」不同，跳頁不是往 pages 陣列後面疊加，而是直接把陣列
+    // 換成「跳過去的那一頁」單獨一份，baseIndex 記錄這一頁的真實 pageIndex。這樣
+    // 使用者跳到很舊的頁次後，畫面上看到的就是那一頁本身，不會因為要保留中間所
+    // 有頁次而一次抓一大批資料回來。跳完之後仍然可以繼續按「載入更早的文章」，
+    // 從 baseIndex 接著往後累加。
+    function renderPagerBar(boardId) {
+      var bar = document.getElementById('articlePagerBar');
+      var entry = boardBulkCache[boardId];
+
+      if (!entry || !entry.totalCount || !entry.pageSize) {
+        bar.style.display = 'none';
+        return;
+      }
+
+      var totalPages = Math.ceil(entry.totalCount / entry.pageSize);
+      if (totalPages <= 1) {
+        // 跟「載入更早的文章」按鈕一樣的隱藏原則：文章數本來就沒超過一頁的看板，
+        // 完全感覺不到這顆 pager bar 存在
+        bar.style.display = 'none';
+        return;
+      }
+
+      var firstPageNum = entry.baseIndex + 1;
+      var lastPageNum = entry.baseIndex + entry.pages.length;
+      var label = (firstPageNum === lastPageNum)
+        ? ('第 ' + firstPageNum + ' 頁 / 共 ' + totalPages + ' 頁')
+        : ('第 ' + firstPageNum + '–' + lastPageNum + ' 頁 / 共 ' + totalPages + ' 頁');
+
+      document.getElementById('pagerPageIndicator').textContent = label;
+      document.getElementById('pagerPrevBtn').disabled = (entry.baseIndex <= 0);
+      document.getElementById('pagerNextBtn').disabled = !entry.hasMore;
+      bar.style.display = 'flex';
+    }
+
+    // ◀／▶ 箭頭：以目前已載入範圍的邊界為準各跳一頁（如果之前按過幾次「載入更
+    // 早的文章」，範圍會超過一頁，箭頭一次只收斂回單獨一頁，不是整個範圍再往前
+    // /後移動一頁）
+    function pagerGoRelative(delta) {
+      var entry = boardBulkCache[currentBoardId];
+      if (!entry) return;
+      if (delta < 0) {
+        if (entry.baseIndex <= 0) return;
+        jumpToPage(currentBoardId, entry.baseIndex - 1);
+      } else {
+        if (!entry.hasMore) return;
+        jumpToPage(currentBoardId, entry.baseIndex + entry.pages.length);
+      }
+    }
+
+    function jumpToPage(boardId, targetPageIndex) {
+      if (targetPageIndex < 0) targetPageIndex = 0;
+      var entry = boardBulkCache[boardId];
+
+      // 效能優化：目標頁如果剛好已經在目前累積載入的連續範圍內（例如按過幾次
+      // 「載入更早的文章」，本地已經有第 0～2 頁），直接從本地資料收斂渲染，不
+      // 用為了「跳頁」這個動作特地再打一次伺服器——沿用這輪一路以來「少次量多」
+      // 的原則。範圍內第幾頁還有沒有更舊的頁次，看它是不是本地已載入範圍裡的
+      // 最後一頁：不是的話，後面那頁本來就已經確定存在（已經載入過），hasMore
+      // 一定是 true；剛好是最後一頁才需要沿用伺服器上次告訴我們的 entry.hasMore。
+      if (entry && targetPageIndex >= entry.baseIndex && targetPageIndex < entry.baseIndex + entry.pages.length) {
+        var localOffset = targetPageIndex - entry.baseIndex;
+        var isLastLoadedPage = (localOffset === entry.pages.length - 1);
+        boardBulkCache[boardId] = {
+          baseIndex: targetPageIndex,
+          pages: [entry.pages[localOffset]],
+          hasMore: isLastLoadedPage ? entry.hasMore : true,
+          totalCount: entry.totalCount,
+          pageSize: entry.pageSize
+        };
+        closePageJumpPopup();
+        renderArticleListFromCache(boardId);
+        return;
+      }
+
+      var listContainer = document.getElementById('articleList');
+      listContainer.innerHTML = '<div class="placeholder-msg" style="margin-top: 40px; font-size: 0.9rem;">載入中...</div>';
+      closePageJumpPopup();
+
+      google.script.run.withSuccessHandler(function(json) {
+        var res = {};
+        try { res = JSON.parse(json || '{}'); } catch (e) { res = {}; }
+
+        boardBulkCache[boardId] = {
+          baseIndex: targetPageIndex,
+          pages: [{ version: res.version, articles: res.articles || [], repliesByArticleId: res.repliesByArticleId || {} }],
+          hasMore: !!res.hasMore,
+          // unchanged／不允許讀取的分支不會帶 totalCount/pageSize，沿用舊值保底，
+          // 避免 pager bar 因為單次回應缺欄位就整個消失
+          totalCount: (typeof res.totalCount === 'number') ? res.totalCount : (entry && entry.totalCount),
+          pageSize: (typeof res.pageSize === 'number') ? res.pageSize : (entry && entry.pageSize)
+        };
+        renderArticleListFromCache(boardId);
+      }).withFailureHandler(function(err) {
+        renderArticleListFromCache(boardId); // 退回原本已快取的畫面，不留在「載入中」
+        showToast('跳頁失敗，請稍後再試: ' + err.message, 'error');
+      }).getBoardBulkFromToken(currentToken, boardId, targetPageIndex, '');
+    }
+
+    function jumpToLastPage() {
+      var entry = boardBulkCache[currentBoardId];
+      if (!entry || !entry.totalCount || !entry.pageSize) return;
+      var totalPages = Math.ceil(entry.totalCount / entry.pageSize);
+      jumpToPage(currentBoardId, totalPages - 1);
+    }
+
+    function openPageJumpPopup() {
+      var entry = boardBulkCache[currentBoardId];
+      if (!entry || !entry.totalCount || !entry.pageSize) return; // pager bar 本來就該被藏起來，這裡是保險
+      var totalPages = Math.ceil(entry.totalCount / entry.pageSize);
+
+      var firstPageNum = entry.baseIndex + 1;
+      var lastPageNum = entry.baseIndex + entry.pages.length;
+      var currentLabel = (firstPageNum === lastPageNum) ? ('第 ' + firstPageNum + ' 頁') : ('第 ' + firstPageNum + '–' + lastPageNum + ' 頁');
+      document.getElementById('pageJumpHint').textContent = '共 ' + totalPages + ' 頁（目前顯示' + currentLabel + '）';
+      var input = document.getElementById('pageJumpInput');
+      input.min = 1;
+      input.max = totalPages;
+      input.value = firstPageNum;
+
+      document.getElementById('pageJumpPopup').classList.add('open');
+      input.focus();
+      input.select();
+    }
+
+    function closePageJumpPopup() {
+      document.getElementById('pageJumpPopup').classList.remove('open');
+    }
+
+    function submitPageJump() {
+      var entry = boardBulkCache[currentBoardId];
+      if (!entry || !entry.totalCount || !entry.pageSize) { closePageJumpPopup(); return; }
+      var totalPages = Math.ceil(entry.totalCount / entry.pageSize);
+      var raw = parseInt(document.getElementById('pageJumpInput').value, 10);
+      if (isNaN(raw)) return; // 輸入無效（空白或非數字）：不關窗，讓使用者可以直接重新輸入，不用再點一次「跳到指定頁」
+      var clamped = Math.min(Math.max(raw, 1), totalPages); // 邊界值 clamp（含 0 或負數），不管使用者輸入什麼都會落在有效範圍內
+      jumpToPage(currentBoardId, clamped - 1);
+    }
+
+    // 本人發文成功後直接本地插入，不重新呼叫伺服器；新文章一律插進第 0 頁最前面，
+    // 跟伺服器端「newest first」排序、以及「新文章永遠出現在最新一頁」的設計一致
     function patchArticleListOnCreate(boardId, version, newArticle) {
-      var entry = boardArticleCache[boardId];
-      if (!entry) return false; // 這個看板本次 session 還沒讀過，沒東西可以本地拼接，下次切過去時走正常的完整讀取
-      entry.articles.unshift(newArticle);
-      entry.version = version; // 同步伺服器這次寫入後的新版本，避免下次比對誤判成「有其他異動」
+      var entry = boardBulkCache[boardId];
+      if (!entry || !entry.pages[0]) return false; // 這個看板本次 session 還沒讀過，沒東西可以本地拼接，下次切過去時走正常的完整讀取
+      // 跳頁功能：pages[0] 只有在 baseIndex === 0 時才是真正的「最新一頁」，使用者
+      // 目前如果正停在跳頁後的某個較舊頁次，這裡不能硬塞——回傳 false 讓呼叫端改
+      // 用 loadArticles 整個重新載入（會把 baseIndex 重置回 0），新文章才會正確
+      // 出現在使用者眼前，而不是被塞進一頁根本不是最新內容的舊頁次裡
+      if (entry.baseIndex !== 0) return false;
+      entry.pages[0].articles.unshift(newArticle);
+      entry.pages[0].repliesByArticleId[newArticle.articleId] = [];
+      entry.pages[0].version = version; // 同步伺服器這次寫入後的新版本，避免下次比對誤判成「有其他異動」
       return true;
     }
 
     function patchArticleListOnEdit(boardId, version, articleId, newTitle) {
-      var entry = boardArticleCache[boardId];
-      if (!entry) return false;
-      var target = entry.articles.find(function(a) { return a.articleId === articleId; });
-      if (target) target.title = newTitle;
-      entry.version = version;
+      var located = findCachedArticleLocation_(boardId, articleId);
+      if (!located) return false;
+      located.article.title = newTitle;
+      boardBulkCache[boardId].pages[located.pageIndex].version = version;
       return true;
     }
 
     function patchArticleListOnDelete(boardId, version, articleId) {
-      var entry = boardArticleCache[boardId];
-      if (!entry) return false;
-      entry.articles = entry.articles.filter(function(a) { return a.articleId !== articleId; });
-      entry.version = version;
+      var entry = boardBulkCache[boardId];
+      var located = findCachedArticleLocation_(boardId, articleId);
+      if (!entry || !located) return false;
+      var page = entry.pages[located.pageIndex];
+      page.articles = page.articles.filter(function(a) { return a.articleId !== articleId; });
+      delete page.repliesByArticleId[articleId];
+      page.version = version;
       return true;
     }
 
@@ -1181,35 +1652,64 @@
     // 「回覆數過期視窗」的取捨說明：只保證自己看到的是準的，別人要等看板版本被
     // 發文/編輯/刪文帶動才會更新）
     function patchArticleListReplyCount(boardId, articleId, delta) {
-      var entry = boardArticleCache[boardId];
-      if (!entry) return;
-      var target = entry.articles.find(function(a) { return a.articleId === articleId; });
-      if (!target) return;
-      target.replyCount = (target.replyCount || 0) + delta;
+      var located = findCachedArticleLocation_(boardId, articleId);
+      if (!located) return;
+      located.article.replyCount = (located.article.replyCount || 0) + delta;
       renderArticleListFromCache(boardId);
     }
 
-    // 4. 載入左側文章列表 (單行高密度 rendering)
+    // 深連結網址帶了 ?article= 時，要等第一頁批量資料真的載回來才能從快取找到那篇
+    // 文章直接渲染（見 loadArticles 的呼叫時機）；只觸發一次，觸發後清掉
+    // bootstrapData.articleId，避免之後每次 loadArticles 都重複打開。ticket 07 之後，
+    // 這篇文章如果剛好不在第一頁範圍內（找不到），會補上正式的單篇讀取 fallback；
+    // 這張 ticket 先讓它顯示「不存在」，不當機、不空白（見 loadArticleDetail）。
+    function openDeepLinkedArticleIfPending() {
+      if (!bootstrapData.articleId) return;
+      var articleId = bootstrapData.articleId;
+      bootstrapData.articleId = null;
+      selectArticle(articleId, null);
+    }
+
+    // 4. 載入左側文章列表 (單行高密度 rendering)。效能優化 ticket 05：一次把第一頁
+    // 的文章（含內文/圖片）跟這批文章的全部回覆整批讀回來，之後點開任何一篇文章、
+    // 任一則回覆都直接從 boardBulkCache 取用，不再呼叫伺服器。
+    //
+    // 跳頁功能的已知取捨：這裡永遠是跟後端「真正第 0 頁」的版本鍵比對，所以只有
+    // entry.baseIndex 本來就是 0（沒跳頁，或跳頁後又跳回第 0 頁）時，才能拿
+    // pages[0].version 當作已知版本去比對、有機會走 unchanged 短路；baseIndex 不是
+    // 0 時（使用者切走前正停在跳頁後的某個舊頁次），knownVersion 故意留空，等於
+    // 強制真正重讀第 0 頁。實際效果是：切到別的看板、再切回來，會回到這個看板
+    // 最新的一頁，不會保留切走前跳到的頁次——這跟大多數論壇「重新進入看板一律看
+    // 最新」的習慣一致，也避免了要另外用 baseIndex 當版本鍵的複雜度，已確認這個
+    // 代價可以接受。
     function loadArticles(boardId) {
       var listContainer = document.getElementById('articleList');
       listContainer.innerHTML = '<div class="placeholder-msg" style="margin-top: 40px; font-size: 0.9rem;">載入中...</div>';
 
-      var known = boardArticleCache[boardId];
-      var knownVersion = known ? known.version : '';
+      var entry = boardBulkCache[boardId];
+      var knownVersion = (entry && entry.baseIndex === 0 && entry.pages[0]) ? entry.pages[0].version : '';
 
       google.script.run.withSuccessHandler(function(json) {
         var res = {};
         try { res = JSON.parse(json || '{}'); } catch (e) { res = {}; }
 
         if (res.unchanged) {
-          // 版本沒變，沿用本地已經快取的資料，不用理會 res.articles（伺服器這次根本沒撈）
+          // 版本沒變，沿用本地已經快取的資料，不用理會 res 其餘欄位（伺服器這次根本沒撈）
           renderArticleListFromCache(boardId);
+          openDeepLinkedArticleIfPending();
           return;
         }
 
-        boardArticleCache[boardId] = { version: res.version, articles: res.articles || [] };
+        boardBulkCache[boardId] = {
+          baseIndex: 0,
+          pages: [{ version: res.version, articles: res.articles || [], repliesByArticleId: res.repliesByArticleId || {} }],
+          hasMore: !!res.hasMore,
+          totalCount: (typeof res.totalCount === 'number') ? res.totalCount : null,
+          pageSize: (typeof res.pageSize === 'number') ? res.pageSize : null
+        };
         renderArticleListFromCache(boardId);
-      }).getArticlesFromToken(currentToken, boardId, knownVersion);
+        openDeepLinkedArticleIfPending();
+      }).getBoardBulkFromToken(currentToken, boardId, 0, knownVersion);
     }
 
     // 5. 折疊/展開發文表單切換
@@ -1250,127 +1750,330 @@
       loadArticleDetail(articleId);
     }
 
-    // 優化輪 ticket 04（#1b）：本次 session 已經完整讀取過的文章詳情快取，
-    // key 是 articleId，value 是 { version, data: {article, replies} }。行為對稱於
-    // ticket 03 的 boardArticleCache。
-    var articleDetailCache = {};
-
+    // 效能優化 ticket 05：不再需要獨立的文章詳情快取——文章跟回覆已經在
+    // loadArticles 進板時整批讀進 boardBulkCache 了（見上方），已載入的情況下
+    // 這裡純粹是本地查找 + 渲染，不呼叫伺服器。
+    // 效能優化 ticket 07：不在已載入頁次範圍內時（深連結指到舊文章、或使用者
+    // 還沒點「載入更早的文章」翻到那一頁），改呼叫既有的 getArticleDetailFromToken
+    // 單篇補讀，不觸發整個看板的批量載入。刻意不把補讀到的結果併入 boardBulkCache
+    // 的頁次結構——那會弄亂「載入更早的文章」的頁次計算（下一頁該從哪裡開始），
+    // 也可能讓同一篇文章在批量資料真的涵蓋到它的時候重複出現。lastArticleDetail
+    // 是唯一存放「目前右側面板顯示什麼」的地方，不管資料是從哪個管道拿到的。
     function loadArticleDetail(articleId) {
       var rightPanel = document.getElementById('rightPanel');
-      rightPanel.innerHTML = '<div class="placeholder-msg">文章載入中...</div>';
+      var located = findCachedArticleLocation_(currentBoardId, articleId);
 
-      var known = articleDetailCache[articleId];
-      var knownVersion = known ? known.version : '';
+      if (located) {
+        var page = boardBulkCache[currentBoardId].pages[located.pageIndex];
+        var data = { article: located.article, replies: page.repliesByArticleId[articleId] || [] };
+        lastArticleDetail = data;
+        renderArticleDetail(data);
+        return;
+      }
+
+      rightPanel.innerHTML = '<div class="placeholder-msg">文章載入中...</div>';
 
       google.script.run.withSuccessHandler(function(json) {
         var res = null;
         try { res = JSON.parse(json || 'null'); } catch (e) { res = null; }
 
-        if (res && res.unchanged) {
-          var cached = articleDetailCache[articleId];
-          if (cached) {
-            lastArticleDetail = cached.data;
-            renderArticleDetail(cached.data);
-            return;
-          }
-          // 理論上不會走到這（有版本值代表之前一定快取過），保險起見還是當作要重讀
-        }
-
         if (!res || !res.article) {
+          // 找不到、或這個角色沒有權限看——兩種情況刻意顯示同一句話，不透露是哪一種
+          // （跟 getArticleDetailForSnapshot 的既有設計一致，見該函式的說明）
           rightPanel.innerHTML = '<div class="placeholder-msg">文章不存在或已被刪除</div>';
-          delete articleDetailCache[articleId];
+          lastArticleDetail = null;
           return;
         }
 
-        var data = { article: res.article, replies: res.replies || [] };
-        articleDetailCache[articleId] = { version: res.version, data: data };
-        lastArticleDetail = data;
-        renderArticleDetail(data);
-      }).getArticleDetailFromToken(currentToken, articleId, knownVersion);
+        var fallbackData = { article: res.article, replies: res.replies || [] };
+        lastArticleDetail = fallbackData;
+        renderArticleDetail(fallbackData);
+      }).getArticleDetailFromToken(currentToken, articleId, '');
     }
 
-    // 本人回覆成功後直接本地插入，不重新呼叫 getArticleDetailFromToken；
-    // 回覆是「舊到新」排序，新的回覆排最後面
+    // 本人回覆成功後直接本地插入，不重新呼叫伺服器；回覆是「舊到新」排序，
+    // 新的回覆排最後面
     function patchArticleDetailOnReplyCreate(articleId, version, newReply) {
-      var entry = articleDetailCache[articleId];
-      if (!entry) return false;
-      entry.data.replies.push(newReply);
-      entry.version = version;
-      lastArticleDetail = entry.data;
+      var located = findCachedArticleLocation_(currentBoardId, articleId);
+      if (!located) return false;
+      var page = boardBulkCache[currentBoardId].pages[located.pageIndex];
+      if (!page.repliesByArticleId[articleId]) page.repliesByArticleId[articleId] = [];
+      page.repliesByArticleId[articleId].push(newReply);
+      page.version = version;
+      lastArticleDetail = { article: located.article, replies: page.repliesByArticleId[articleId] };
       return true;
     }
 
     function patchArticleDetailOnReplyDelete(articleId, version, replyId) {
-      var entry = articleDetailCache[articleId];
-      if (!entry) return false;
-      entry.data.replies = entry.data.replies.filter(function(r) { return r.replyId !== replyId; });
-      entry.version = version;
-      lastArticleDetail = entry.data;
+      var located = findCachedArticleLocation_(currentBoardId, articleId);
+      if (!located) return false;
+      var page = boardBulkCache[currentBoardId].pages[located.pageIndex];
+      page.repliesByArticleId[articleId] = (page.repliesByArticleId[articleId] || []).filter(function(r) { return r.replyId !== replyId; });
+      page.version = version;
+      lastArticleDetail = { article: located.article, replies: page.repliesByArticleId[articleId] };
       return true;
     }
 
     function patchArticleDetailOnEdit(articleId, version, title, content, editedAt, editedBy, imageUrls) {
-      var entry = articleDetailCache[articleId];
-      if (!entry) return false;
-      entry.data.article.title = title;
-      entry.data.article.content = content;
-      entry.data.article.editedAt = editedAt;
-      entry.data.article.editedBy = editedBy;
+      var located = findCachedArticleLocation_(currentBoardId, articleId);
+      if (!located) return false;
+      located.article.title = title;
+      located.article.content = content;
+      located.article.editedAt = editedAt;
+      located.article.editedBy = editedBy;
       if (imageUrls) {
-        entry.data.article.imageUrl1 = imageUrls[0] || '';
-        entry.data.article.imageUrl2 = imageUrls[1] || '';
-        entry.data.article.imageUrl3 = imageUrls[2] || '';
+        located.article.imageUrls = imageUrls;
       }
-      entry.version = version;
-      lastArticleDetail = entry.data;
+      var page = boardBulkCache[currentBoardId].pages[located.pageIndex];
+      page.version = version;
+      lastArticleDetail = { article: located.article, replies: page.repliesByArticleId[articleId] || [] };
       return true;
     }
 
     // 6b. 實際組裝右側文章詳情 HTML（含檢視 / 編輯兩種模式）
     // ticket 09/10：文章下方縮圖，點擊以燈箱放大顯示
+    // 圖片張數突破：從固定顯示最多 3 張（imageUrl1~3），改成縮圖網格，
+    // 任意張數都能顯示；點擊任一縮圖開燈箱瀏覽。
+    // 安全性審查 H3 殘留風險（見交接文件）：舊版這裡是用 inline
+    // onclick="openLightbox('...')" 把網址字串插進屬性裡綁事件，
+    // escapeHtml() 對這種寫法其實不是有效的輸出端防禦。這次改寫縮圖網格
+    // 順手修掉：不再產生 onclick 屬性字串，img 只是普通的 <img>，實際綁
+    // 事件的地方在下面的 rightPanel 委派監聽（見那裡的說明），用
+    // addEventListener、讀 DOM 自己的 .src 屬性，不再手動插值組字串。
     function renderArticleImages(article) {
-      var urls = [article.imageUrl1, article.imageUrl2, article.imageUrl3].filter(function(u) { return u; });
+      var urls = (article.imageUrls || []).filter(function(u) { return u; });
       if (urls.length === 0) return '';
       var imgs = urls.map(function(u) {
-        return '<img src="' + escapeHtml(u) + '" alt="文章附加圖片" onclick="openLightbox(\'' + escapeHtml(u) + '\')" />';
+        return '<img src="' + escapeHtml(u) + '" alt="文章附加圖片" class="article-image-thumb" />';
       }).join('');
       return '<div class="article-images">' + imgs + '</div>';
     }
 
+    // rightPanel 是文章詳情的固定容器，每次切換文章只換裡面的 innerHTML，
+    // 容器本身不會被整個換掉，監聽器綁一次就一直有效，不用每次重繪內容
+    // 後重新綁——比起在動態產生的每張縮圖上各自 addEventListener（那樣
+    // 每次 innerHTML 更新後舊的監聽器就失效，還要記得重新綁），事件委派
+    // 在這種「內容常換、容器不換」的情境下更省事也更不容易漏綁。
+    document.getElementById('rightPanel').addEventListener('click', function(event) {
+      if (event.target && event.target.classList.contains('article-image-thumb')) {
+        openLightbox(event.target.src);
+      }
+    });
+
+    var lightboxImageIndex = -1; // 圖片張數突破輪 ticket 06：目前燈箱顯示的圖片，在 lastArticleDetail.article.imageUrls 裡的 index，燈箱沒開時是 -1
+
     function openLightbox(url) {
       document.getElementById('lightboxImage').src = url;
       document.getElementById('lightboxOverlay').classList.add('open');
+      var urls = (lastArticleDetail && lastArticleDetail.article && lastArticleDetail.article.imageUrls) || [];
+      lightboxImageIndex = urls.indexOf(url);
     }
 
     function closeLightbox() {
       document.getElementById('lightboxOverlay').classList.remove('open');
       document.getElementById('lightboxImage').src = '';
+      lightboxImageIndex = -1;
     }
 
-    // ticket 10：編輯文章時的圖片管理——3 個格子，每格是既有圖片（可移除）或空格（可選新圖片）
+    // ticket 06：燈箱開著時，左右鍵切換同一篇文章的上一張/下一張圖片。
+    // 邊界（第一張按左鍵、最後一張按右鍵）停住不動，跟 ticket 02 的
+    // selectAdjacentArticle_ 上下鍵邊界處理是同一個慣例，不wrap。只有
+    // 一張圖片時 urls.length <= 1，怎麼按都不會動，不會出錯。
+    function navigateLightbox_(direction) {
+      var urls = (lastArticleDetail && lastArticleDetail.article && lastArticleDetail.article.imageUrls) || [];
+      if (urls.length <= 1 || lightboxImageIndex === -1) return;
+      var targetIndex = lightboxImageIndex + direction;
+      if (targetIndex < 0 || targetIndex >= urls.length) return;
+      openLightbox(urls[targetIndex]);
+    }
+
+    function isLightboxOpen_() {
+      var overlay = document.getElementById('lightboxOverlay');
+      return !!(overlay && overlay.classList.contains('open'));
+    }
+
+    // ---- 圖片張數突破輪 ticket 02：桌面雙欄版面鍵盤導覽 ----
+
+    // ↑/↓：切換到目前選定文章在已載入清單裡的上一篇（較新）/下一篇（較舊）。
+    // direction: -1 = 上一篇, +1 = 下一篇。已經在清單邊界（最新的一篇按上鍵、
+    // 最舊的一篇按下鍵）時停住不動，不觸發翻頁——翻頁另外交給左右鍵。
+    // 目前沒有選定文章、或選定的文章不在目前已載入清單裡（例如深連結補讀到的
+    // 舊文章），一律不動作，不猜測使用者想跳去哪。
+    function selectAdjacentArticle_(direction) {
+      var articles = currentBoardArticlesFlat_(currentBoardId);
+      var index = articles.findIndex(function(a) { return a.articleId === currentArticleId; });
+      if (index === -1) return;
+      var targetIndex = index + direction;
+      if (targetIndex < 0 || targetIndex >= articles.length) return;
+      var targetEl = document.querySelectorAll('.article-item')[targetIndex]; // DOM 順序保證跟 articles 陣列順序一致，見 currentBoardArticlesFlat_ 的說明
+      selectArticle(articles[targetIndex].articleId, targetEl || null);
+    }
+
+    // 手機導覽補強輪 ticket 01：算出目前文章在清單裡是否還有上一篇/下一篇，
+    // 供手機版固定按鈕決定要不要顯示 disabled 態。跟 selectAdjacentArticle_
+    // 用同一份 currentBoardArticlesFlat_ 資料源、同一套「目前文章不在已載入
+    // 清單裡就當作沒有上下篇」的邊界判斷，避免兩處各自維護一份容易兜不起來。
+    function mobileAdjacentArticleAvailability_() {
+      var articles = currentBoardArticlesFlat_(currentBoardId);
+      var index = articles.findIndex(function(a) { return a.articleId === currentArticleId; });
+      if (index === -1) return { hasPrev: false, hasNext: false };
+      return { hasPrev: index > 0, hasNext: index < articles.length - 1 };
+    }
+
+    // Ctrl+K：開啟發文表單，已經開著就不做任何事（不是 toggle，避免快捷鍵
+    // 意外把表單關掉），並把游標帶到標題欄位，開完就能直接打字。
+    function openPostFormIfClosed_() {
+      var form = document.getElementById('postArticleForm');
+      if (form && form.style.display === 'none') {
+        togglePostForm();
+      }
+      var titleInput = document.getElementById('newArticleTitle');
+      if (titleInput) titleInput.focus();
+    }
+
+    // 只在桌面雙欄版面生效（手機版單畫面導覽邏輯不同，見 selectArticle 裡
+    // wasAlreadyInDetail 的說明，這裡不處理手機版）。焦點在輸入框（標題/
+    // 內容/回覆等文字輸入區）時，除了 Esc 以外全部略過，不影響正常打字；
+    // Esc 不管焦點在哪都生效，因為「關掉彈出的東西」不該被輸入框擋住。
+    document.addEventListener('keydown', function(event) {
+      if (viewMode !== 'desktop') return;
+
+      if (event.key === 'Escape') {
+        closeBoardListPopup();
+        closePageJumpPopup();
+        closeLightbox();
+        return;
+      }
+
+      var isTyping = event.target && (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA');
+      if (isTyping) return;
+
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        selectAdjacentArticle_(-1);
+      } else if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        selectAdjacentArticle_(1);
+      } else if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        // ticket 06：燈箱開著時左右鍵讓位給切換圖片，關掉燈箱（Esc）後
+        // 自動恢復成切頁——不需要另外記狀態切換，isLightboxOpen_ 當下
+        // 讀 DOM 的 class 就是最新狀態。
+        if (isLightboxOpen_()) {
+          navigateLightbox_(-1);
+        } else {
+          pagerGoRelative(-1); // 既有的◀箭頭按鈕邏輯，見 pagerGoRelative 的說明
+        }
+      } else if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        if (isLightboxOpen_()) {
+          navigateLightbox_(1);
+        } else {
+          pagerGoRelative(1);
+        }
+      } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        // metaKey 一併處理是為了 Mac 的 Cmd+K，跟 Windows/Linux 的 Ctrl+K
+        // 是同一個快捷鍵、不是另外新增的功能。Ctrl+K 本身不是任何主流瀏覽器
+        // 鎖死的保留鍵（不像 Ctrl+N/T/W），可以放心 preventDefault。
+        event.preventDefault();
+        openPostFormIfClosed_();
+      }
+    });
+
+    // ---- 手機導覽補強輪 ticket 02：手機版左右滑動切換上一篇/下一篇 ----
+    // 只在 viewMode === 'mobile' 且目前在 detail 畫面時生效——桌面版已經有
+    // ↑/↓ 快捷鍵（見上面的 keydown 監聽），不需要也不該讓桌面瀏覽器意外
+    // 觸發這組手勢（桌面瀏覽器一般不會有 touch 事件，這裡的 viewMode 檢查
+    // 是多一層保險，不是主要防線）。
+    // 選左右滑而不是上下滑：文章內文本身要垂直捲動，上下滑動的手勢會跟
+    // 捲動打架、分不清使用者是想捲頁還是想切文章；左右滑動不影響垂直捲動，
+    // 也剛好跟桌面版「↑↓ 切文章、←→ 翻頁」的左右軸對應到「換內容」的
+    // 直覺一致。
+    // 效率面：底層一樣呼叫 selectAdjacentArticle_ -> selectArticle ->
+    // loadArticleDetail，走既有的「先查 boardBulkCache 本地資料，沒有才
+    // 補打後端」路徑（見 loadArticleDetail 的說明），前後篇文章本來就已經
+    // 在使用者瀏覽這個看板的過程中批次讀進 boardBulkCache 了，這裡新增的
+    // 手勢入口不會多打一次試算表讀取，跟桌面鍵盤導覽是同一份效率優化成果。
+    // 安全面：不新增任何使用者輸入或動態 HTML 組裝，純粹是觸發既有、已經
+    // 通過權限檢查與 escapeHtml 處理的 selectArticle／renderArticleDetail
+    // 路徑，不擴大攻擊面。
+    // 綁在 #rightPanel 上而不是每次重繪都重建的內部節點——rightPanel 本身
+    // 是穩定存在的容器（只有 innerHTML 會變），道理同 wireImageDropZone_
+    // 的說明，一次綁定，之後每次重繪依然有效。
+    (function () {
+      var rightPanelEl = document.getElementById('rightPanel');
+      var touchStartX = null;
+      var touchStartY = null;
+      var touchStartEdge = false;
+
+      // 起點在螢幕最左緣一小段範圍內時，整段手勢直接放行、不攔截：iOS
+      // Safari 從最左緣往右滑是系統「上一頁」手勢，效果等同「返回列表」，
+      // 這裡刻意不跟它搶，讓使用者原本熟悉的返回手勢維持原樣（見前一輪
+      // 對話對這個邊界情況的討論）。
+      var EDGE_IGNORE_PX = 24;
+      var SWIPE_MIN_DELTA_X = 60; // 位移門檻：太小的位移視為誤觸/正常點擊，不觸發切換
+      var SWIPE_MAX_OFF_AXIS_RATIO = 0.5; // 縱向位移超過橫向位移的一半，視為在捲動內文，不是要切文章
+
+      rightPanelEl.addEventListener('touchstart', function (event) {
+        if (viewMode !== 'mobile' || navState.screen !== 'detail') return;
+        if (isLightboxOpen_()) return; // 燈箱開著時滑動交給燈箱自己（目前燈箱僅支援點擊/Esc關閉，不會誤觸這裡的邏輯，但仍明確排除）
+        var target = event.target;
+        if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return; // 在回覆輸入框打字/選字時不要誤觸
+        var touch = event.touches[0];
+        touchStartX = touch.clientX;
+        touchStartY = touch.clientY;
+        touchStartEdge = touch.clientX <= EDGE_IGNORE_PX;
+      }, { passive: true });
+
+      rightPanelEl.addEventListener('touchend', function (event) {
+        if (touchStartX === null || touchStartEdge) {
+          touchStartX = null;
+          touchStartY = null;
+          touchStartEdge = false;
+          return;
+        }
+        var touch = event.changedTouches[0];
+        var deltaX = touch.clientX - touchStartX;
+        var deltaY = touch.clientY - touchStartY;
+        touchStartX = null;
+        touchStartY = null;
+        touchStartEdge = false;
+
+        if (Math.abs(deltaX) < SWIPE_MIN_DELTA_X) return;
+        if (Math.abs(deltaY) > Math.abs(deltaX) * SWIPE_MAX_OFF_AXIS_RATIO) return;
+
+        // 往左滑（deltaX 負）＝下一篇（較舊），往右滑（deltaX 正）＝上一篇
+        // （較新），跟 selectAdjacentArticle_ 的 direction 定義（-1=上一篇,
+        // +1=下一篇）對應，行為（含清單邊界時停住不動）跟按鈕、桌面快捷鍵
+        // 完全一致，同一套函式、同一套邊界判斷。
+        selectAdjacentArticle_(deltaX < 0 ? 1 : -1);
+      }, { passive: true });
+    })();
+
+    // 圖片張數突破：編輯文章時的圖片管理——不定長清單，每項是既有圖片
+    // （可移除）或新選的圖片（可移除），清單後接一個新增圖片的控制項
     function renderEditImageSlots() {
-      return renderImageSlotsHtml(editImageSlots, 'setEditImageSlot', 'removeEditImageSlot') +
+      return renderImageListHtml(editImageList, 'addEditImage', 'removeEditImage') +
         '<div class="image-upload-warning">⚠️ 圖片連結為公開分享連結（知道連結就能看），請勿上傳含敏感內容的圖片</div>';
     }
 
-    function removeEditImageSlot(index) {
-      editImageSlots[index] = '';
+    function removeEditImage(index) {
+      editImageList.splice(index, 1);
       renderArticleDetail(lastArticleDetail);
     }
 
-    function setEditImageSlot(index, inputEl) {
-      var file = inputEl.files && inputEl.files[0];
-      if (!file) return;
-      if (!validateImageFile(file)) { inputEl.value = ''; return; }
-      editImageSlots[index] = file;
-      renderArticleDetail(lastArticleDetail);
+    function addEditImage(inputEl) {
+      tryAddDroppedFiles_(editImageList, inputEl.files, function() { renderArticleDetail(lastArticleDetail); });
+      inputEl.value = ''; // 清空，不然選同一批檔案時瀏覽器不會再次觸發 change
     }
 
     function renderArticleDetail(data) {
       var article = data.article;
       var replies = data.replies || [];
-      var canManageArticle = (currentRole === 'admin' || article.author === currentUserId);
-      var canDeleteReply = (currentRole === 'admin');
+      // 權限系統 ticket 05：canManageArticle 除了本人判斷之外，也要求該角色
+      // 真的有 articleManageOwn 權限——原本只看 author === currentUserId，
+      // 沒有查權限，只是剛好過去能發文的角色都有編輯刪除本人的權限才沒露餡
+      var canManageArticle = (currentRole === 'admin' || (currentPermissions.articleManageOwn && article.author === currentUserId));
       var rightPanel = document.getElementById('rightPanel');
 
       var headerHtml;
@@ -1381,7 +2084,7 @@
           <textarea id="editArticleContent" style="width:100%; height:140px; padding:8px; border:1px solid #cbd5e1; border-radius:4px; margin-bottom:8px;">${escapeHtml(article.content)}</textarea>
           ${renderEditImageSlots()}
           <div style="display:flex; gap:8px; margin-top:8px;">
-            <button class="btn-primary" onclick="handleSaveEditArticle('${article.articleId}')">儲存</button>
+            <button class="btn-primary" id="btnSaveEditArticle" onclick="handleSaveEditArticle('${article.articleId}')">儲存</button>
             <button class="secondary" onclick="handleCancelEditArticle()">取消</button>
           </div>
         `;
@@ -1391,6 +2094,7 @@
             <span>${escapeHtml(article.title)}</span>
             <div style="display:flex; gap:6px; flex-shrink:0;">
               <button class="secondary" style="font-size:0.75rem; padding:4px 10px;" onclick="handleShareArticle('${article.boardId}','${article.articleId}')">🔗 分享</button>
+              ${isMobileLineCapable_() ? `<button class="secondary" style="font-size:0.75rem; padding:4px 10px;" onclick="handleShareToLine()">💬 LINE</button>` : ''}
               ${canManageArticle ? `<button class="secondary" style="font-size:0.75rem; padding:4px 10px;" onclick="handleStartEditArticle()">✏️ 編輯</button>` : ''}
               ${canManageArticle ? `<button class="secondary" style="font-size:0.75rem; padding:4px 10px;" onclick="handleDeleteArticle('${article.articleId}')">🗑 刪除</button>` : ''}
             </div>
@@ -1404,7 +2108,21 @@
         `;
       }
 
+      // 手機導覽補強輪 ticket 01：按鈕列跟「← 返回列表」按鈕都在同一個
+      // .mobile-back-btn/.mobile-article-nav-bar CSS 規則下只在手機版
+      // detail 畫面顯示（見 CSS 的 body.mobile-detail 規則），桌面版
+      // 完全不會渲染出這兩個按鈕造成的多餘空間（display:none）。
+      // disabled 態現算現用：每次重繪文章詳情（含發完回覆後的重繪）都
+      // 重新呼叫 mobileAdjacentArticleAvailability_，狀態不會因為清單
+      // 內容變化（例如「載入更早的文章」補進更多篇）而卡在舊的 disabled 態。
+      var navAvailability = mobileAdjacentArticleAvailability_();
       var html = `<button type="button" class="mobile-back-btn" onclick="backToList()">← 返回列表</button>`;
+      html += `
+        <div class="mobile-article-nav-bar">
+          <button type="button" class="mobile-article-nav-btn" ${navAvailability.hasPrev ? '' : 'disabled'} onclick="selectAdjacentArticle_(-1)">‹ 上一篇</button>
+          <button type="button" class="mobile-article-nav-btn" ${navAvailability.hasNext ? '' : 'disabled'} onclick="selectAdjacentArticle_(1)">下一篇 ›</button>
+        </div>
+      `;
       html += `<div class="article-detail-card">${headerHtml}</div>`;
 
       html += `
@@ -1417,6 +2135,10 @@
         html += '<div style="color: #94a3b8; font-size: 0.9rem;">尚無回覆，成為第一個留言的人吧！</div>';
       } else {
         replies.forEach(function(r) {
+          // 權限系統 ticket 07：canDeleteReply 現在要逐則回覆判斷（不再是整個
+          // 畫面共用同一個值），因為除了 admin 之外，一般角色只能刪自己發的
+          // 那幾則，不是全部或全無
+          var canDeleteReply = (currentRole === 'admin' || (currentPermissions.replyDeleteOwn && r.author === currentUserId));
           html += `
             <div class="reply-item">
               <div class="reply-meta" style="display:flex; justify-content:space-between; align-items:center;">
@@ -1460,7 +2182,7 @@
           sessionStorage.setItem('bbs_last_login_at', currentLastLoginAt);
           checkUserStatus();
         } else {
-          alert('登入失敗: ' + res.error);
+          showToast('登入失敗: ' + res.error, 'error');
         }
       }).loginFromForm(u, p);
     }
@@ -1470,9 +2192,9 @@
       var p = document.getElementById('loginPassword').value;
       google.script.run.withSuccessHandler(function(res) {
         if (res.success) {
-          alert('註冊成功！請重新點擊登入。');
+          showToast('註冊成功！請重新點擊登入。', 'success');
         } else {
-          alert('註冊失敗: ' + res.error);
+          showToast('註冊失敗: ' + res.error, 'error');
         }
       }).registerUserFromForm(u, p);
     }
@@ -1489,53 +2211,168 @@
       }).logoutFromForm(currentToken);
     }
 
-    // ---- ticket 09/10（後續統一為 3 格單選，見對話紀錄）：圖片上傳前處理 ----
+    // ---- ticket 09/10 → 圖片張數突破輪改成不定長清單：圖片上傳前處理 ----
     var ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-    var MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024; // 5MB
-    var MAX_IMAGES_PER_ARTICLE = 3;
+    var MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024; // 5MB，單張圖片上限，不變
+    var MAX_IMAGES_PER_ARTICLE = 99; // 圖片張數突破：從 3 放寬到 99，跟後端 imageStorage.js 的 MAX_IMAGES_PER_ARTICLE 是同一個數字（前端沒有 require，這裡各自維護一份常數，跟 Code.js 檔頭說明的前後端邊界一致）
+    // 圖片自動分批上傳：原本這裡是「新選圖片」總位元組數超過 30MB 就整個擋下、
+    // 要使用者自己移除幾張再試的 MAX_TOTAL_IMAGE_BYTES 上限。改成自動分批後
+    // 不再需要整體上限——uploadImagesInBatches 會依這個「每批」上限（不是
+    // 總量上限）自動把新選圖片切成多個安全大小的批次分次上傳，使用者不用
+    // 手動處理。8MB 抓得比原本 30MB 保守很多：base64 編碼後體積會膨脹約
+    // 4/3 倍，加上 google.script.run 單次呼叫本身也有其他 payload/執行時間
+    // 限制，每批小一點比較穩。
+    var IMAGE_UPLOAD_BATCH_BYTES = 8 * 1024 * 1024;
 
     // 共用的單一檔案驗證（格式/大小），選圖當下就檔，不用等送出後端才發現被拒絕
     function validateImageFile(file) {
       if (ALLOWED_IMAGE_TYPES.indexOf(file.type) === -1) {
-        alert('圖片格式僅支援 jpg/png/gif/webp：' + file.name);
+        showToast('圖片格式僅支援 jpg/png/gif/webp：' + file.name, 'error');
         return false;
       }
       if (file.size > MAX_IMAGE_SIZE_BYTES) {
-        alert('圖片檔案大小不能超過 5MB：' + file.name);
+        showToast('圖片檔案大小不能超過 5MB：' + file.name, 'error');
         return false;
       }
       return true;
     }
 
-    // 共用的「N 個圖片格」畫面產生器：slots[i] 可能是既有連結字串（編輯文章時）、
-    // 新選的 File 物件、或空字串（可選新圖片的空格）。發文（一開始 3 格都是空的）
-    // 跟編輯文章（一開始填入既有的 imageUrl1~3）共用同一套外觀跟邏輯，統一都是
-    // 3 個單選格子，不是一個可複選的檔案選取欄位——每一格能各自單獨移除/替換。
-    // changeFnName/removeFnName 是要接在 onchange/onclick 上的全域函式名稱字串。
-    function renderImageSlotsHtml(slots, changeFnName, removeFnName) {
+    // 圖片張數突破：加入一張新選圖片前的兩道檢查——格式/大小、張數上限，
+    // 任何一項不符合就擋下、不把檔案加進清單。（原本這裡還有第三道「新選
+    // 圖片總位元組數不能超過 30MB」的檢查，改成自動分批上傳後不再需要，
+    // 見下方 uploadImagesInBatches 的說明。）
+    function canAddImageToList_(list, file) {
+      if (!validateImageFile(file)) return false;
+      if (list.length >= MAX_IMAGES_PER_ARTICLE) {
+        showToast('圖片數量已達上限（' + MAX_IMAGES_PER_ARTICLE + ' 張）', 'error');
+        return false;
+      }
+      return true;
+    }
+
+    // 圖片張數突破：共用的「圖片清單」畫面產生器，取代原本固定 3 格、每格
+    // 各自綁一個 file input 的做法——list 是「目前已選圖片」的不定長清單
+    // （字串=既有連結、File=新選的圖片，跟舊版不同，這裡沒有空字串佔位，
+    // 移除就是真的從陣列拿掉），逐一顯示縮圖 + 移除按鈕，清單後面接一個
+    // 「新增圖片」的檔案選取控制項（還沒達上限時才顯示）。發文（一開始清單
+    // 是空的）跟編輯文章（一開始填入既有的 imageUrls）共用同一套外觀跟邏輯。
+    // addFnName/removeFnName 是要接在 onchange/onclick 上的全域函式名稱字串。
+    function renderImageListHtml(list, addFnName, removeFnName) {
       var html = '<div class="edit-image-slots">';
-      for (var i = 0; i < MAX_IMAGES_PER_ARTICLE; i++) {
-        var slot = slots[i];
+      list.forEach(function(item, i) {
         html += '<div class="edit-image-slot">';
-        if (slot && typeof slot === 'string') {
-          html += '<img src="' + escapeHtml(slot) + '" alt="附加圖片" />';
-          html += '<button type="button" class="secondary" style="font-size:0.75rem; padding:2px 8px;" onclick="' + removeFnName + '(' + i + ')">移除</button>';
-        } else if (slot instanceof File) {
-          html += '<img src="' + URL.createObjectURL(slot) + '" alt="新選擇的圖片" />';
-          html += '<button type="button" class="secondary" style="font-size:0.75rem; padding:2px 8px;" onclick="' + removeFnName + '(' + i + ')">移除</button>';
+        if (typeof item === 'string') {
+          html += '<img src="' + escapeHtml(item) + '" alt="附加圖片" />';
         } else {
-          html += '<input type="file" accept="image/jpeg,image/png,image/gif,image/webp" onchange="' + changeFnName + '(' + i + ', this)" />';
+          html += '<img src="' + URL.createObjectURL(item) + '" alt="新選擇的圖片" />';
         }
+        html += '<button type="button" class="secondary" style="font-size:0.75rem; padding:2px 8px;" onclick="' + removeFnName + '(' + i + ')">移除</button>';
+        html += '</div>';
+      });
+      if (list.length < MAX_IMAGES_PER_ARTICLE) {
+        html += '<div class="edit-image-slot">';
+        html += '<input type="file" accept="image/jpeg,image/png,image/gif,image/webp" multiple onchange="' + addFnName + '(this)" />';
         html += '</div>';
       }
       html += '</div>';
       return html;
     }
 
-    // 從 slots 陣列裡取出真正要上傳的 File 物件（既有連結字串跟空字串都跳過）
-    function filesFromImageSlots(slots) {
-      return slots.filter(function(s) { return s instanceof File; });
+    // 從 list 裡取出真正要上傳的 File 物件（既有連結字串跳過）
+    function filesFromImageList(list) {
+      return list.filter(function(item) { return item instanceof File; });
     }
+
+    // 加入單一檔案，不觸發重繪——給批次加入時用，重繪留給呼叫端在整批跑完
+    // 後只做一次，不要選 5 張圖就重繪 5 次。
+    function tryAddImageWithoutRerender_(list, file) {
+      if (!file) return;
+      if (!canAddImageToList_(list, file)) return;
+      list.push(file);
+    }
+
+    // 批次加入一組檔案（FileList 或陣列都可以），三種輸入方式共用：點選
+    // 檔案（現在的 <input type="file" multiple>，一次可以選很多張）、
+    // 拖曳（一次拖進來的所有檔案）、貼上（剪貼簿裡的所有圖片項目）。
+    // 每個檔案各自跟原本點檔案選取共用同一套 canAddImageToList_ 驗證
+    // （格式/大小/張數/總量），全部跑完才重繪一次。
+    function tryAddDroppedFiles_(list, files, rerenderFn) {
+      if (!files) return;
+      Array.prototype.forEach.call(files, function(file) {
+        tryAddImageWithoutRerender_(list, file);
+      });
+      rerenderFn();
+    }
+
+    // 把某個穩定存在的容器元素（發文表單的圖片清單容器，不會被整個換掉，
+    // 只有 innerHTML 會變）綁上拖曳上傳。getListFn 是回傳「目前」清單陣列
+    // 的函式（不是直接傳陣列本身）——清單在發文成功後會被整個重新指派成
+    // 新的空陣列（例如 newArticleImageList = []），用函式包起來才能在每次
+    // 真的拖放發生的當下讀到最新的陣列，不會綁到發文成功前的舊陣列參考。
+    function wireImageDropZone_(containerId, getListFn, rerenderFn) {
+      var el = document.getElementById(containerId);
+      if (!el) return;
+      el.addEventListener('dragover', function(event) {
+        event.preventDefault(); // 沒有這行，瀏覽器預設行為是拒絕 drop
+      });
+      el.addEventListener('drop', function(event) {
+        event.preventDefault();
+        var files = event.dataTransfer && event.dataTransfer.files;
+        tryAddDroppedFiles_(getListFn(), files, rerenderFn);
+      });
+    }
+    wireImageDropZone_('newArticleImageSlotsContainer', function() { return newArticleImageList; }, renderNewArticleImageSlots);
+    wireImageDropZone_('mobileNewArticleImageSlotsContainer', function() { return mobileNewArticleImageList; }, renderMobileNewArticleImageSlots);
+
+    // 編輯文章的圖片清單容器不是像上面兩處那樣獨立、穩定的元素——整個編輯
+    // 表單是 rightPanel 大範圍 innerHTML 重繪出來的一部分，每次重繪容器本身
+    // 都是全新的 DOM 節點，直接綁監聽器會在下一次重繪後失效。改成委派在
+    // rightPanel 上（跟下面的縮圖點擊委派同一個容器、同一個道理），用
+    // .edit-image-slots 這個 class 判斷拖放是不是發生在圖片清單區塊裡。
+    (function () {
+      var rightPanelEl = document.getElementById('rightPanel');
+      rightPanelEl.addEventListener('dragover', function(event) {
+        if (event.target && event.target.closest('.edit-image-slots')) {
+          event.preventDefault();
+        }
+      });
+      rightPanelEl.addEventListener('drop', function(event) {
+        if (!(event.target && event.target.closest('.edit-image-slots'))) return;
+        event.preventDefault();
+        var files = event.dataTransfer && event.dataTransfer.files;
+        tryAddDroppedFiles_(editImageList, files, function() { renderArticleDetail(lastArticleDetail); });
+      });
+    })();
+
+    // 圖片張數突破輪 ticket 03：貼上剪貼簿圖片。paste 事件本來就會冒泡，
+    // 用全域委派一次涵蓋六個文字輸入框（桌面/手機發文的標題+內容、編輯
+    // 文章的標題+內容）——編輯文章那兩個欄位每次 rightPanel 重繪都會是
+    // 全新節點，沒辦法比照拖曳綁在固定容器上，委派在 document 上是唯一
+    // 能一次涵蓋六個欄位、不用擔心重繪後監聽器失效的作法。value 也用函式
+    // 包起來，理由同 wireImageDropZone_ 的 getListFn。
+    var PASTE_TARGET_CONFIG_ = {
+      newArticleTitle: function() { return { list: newArticleImageList, rerender: renderNewArticleImageSlots }; },
+      newArticleContent: function() { return { list: newArticleImageList, rerender: renderNewArticleImageSlots }; },
+      mobileNewArticleTitle: function() { return { list: mobileNewArticleImageList, rerender: renderMobileNewArticleImageSlots }; },
+      mobileNewArticleContent: function() { return { list: mobileNewArticleImageList, rerender: renderMobileNewArticleImageSlots }; },
+      editArticleTitle: function() { return { list: editImageList, rerender: function() { renderArticleDetail(lastArticleDetail); } }; },
+      editArticleContent: function() { return { list: editImageList, rerender: function() { renderArticleDetail(lastArticleDetail); } }; }
+    };
+    document.addEventListener('paste', function(event) {
+      var targetId = event.target && event.target.id;
+      var configFn = targetId && PASTE_TARGET_CONFIG_[targetId];
+      if (!configFn) return;
+      var items = event.clipboardData && event.clipboardData.items;
+      if (!items) return;
+      var imageItems = Array.prototype.filter.call(items, function(item) {
+        return item.kind === 'file' && item.type.indexOf('image/') === 0;
+      });
+      if (imageItems.length === 0) return; // 貼的不是圖片（例如純文字）：不攔截，讓瀏覽器照正常方式貼上文字
+      event.preventDefault(); // 貼的是圖片才攔截，避免圖片資料被當成文字貼進欄位裡
+      var cfg = configFn();
+      var pastedFiles = imageItems.map(function(item) { return item.getAsFile(); });
+      tryAddDroppedFiles_(cfg.list, pastedFiles, cfg.rerender);
+    });
 
     // 把已經驗證過的 File 陣列轉成 base64，供 google.script.run 傳給後端存進 Drive
     function readFilesAsBase64Payload(files) {
@@ -1553,45 +2390,100 @@
       return Promise.all(readers);
     }
 
-    // ---- 發文表單（桌面）的 3 個圖片格 ----
-    var newArticleImageSlots = ['', '', ''];
+    // ---- 圖片自動分批上傳 ----
+    // 把 files（依原始選圖順序）依「原始位元組數」累加，切成多個總和不超過
+    // IMAGE_UPLOAD_BATCH_BYTES 的批次。單一檔案本身就超過上限的情況理論上
+    // 不會發生（單檔上限 MAX_IMAGE_SIZE_BYTES=5MB 遠小於這裡的批次上限），
+    // 但還是讓它自成一批，不卡住整個流程。
+    function chunkFilesByBytes_(files, maxBytes) {
+      var batches = [];
+      var current = [];
+      var currentBytes = 0;
+      files.forEach(function(file) {
+        if (current.length > 0 && currentBytes + file.size > maxBytes) {
+          batches.push(current);
+          current = [];
+          currentBytes = 0;
+        }
+        current.push(file);
+        currentBytes += file.size;
+      });
+      if (current.length > 0) batches.push(current);
+      return batches;
+    }
+
+    // 依序（刻意不平行）把每一批轉成 base64 後呼叫後端的 uploadImageBatch，
+    // 每批各自拿回這批圖片的 Drive 連結，全部批次跑完後依原始順序拼回一個
+    // 完整的連結陣列回傳。呼叫端（發文/儲存編輯）因此只要在送出前 await
+    // 這支函式，就能把「新選圖片」全部換成已經上傳好的連結字串——不管
+    // 選了幾張、多大，都不會再因為單次 google.script.run 的 payload 太大
+    // 而整批失敗，使用者不用自己移除圖片重試。刻意不平行是因為後端的
+    // 待用連結清單（見 Code.js 的 addPendingImageUrls_）是「讀出目前清單→
+    // 加進去→整個寫回」，同一個 session 如果兩批同時送到，有可能其中一批
+    // 的寫入把另一批的結果蓋掉；照順序一批做完再做下一批可以完全避開這個
+    // 問題，換來的代價只是總時間變成批次數的線性疊加，換取正確性是值得的。
+    // 回傳的 Promise resolve 成一個字串陣列；任何一批失敗就整個 reject。
+    function uploadImagesInBatches(files) {
+      if (!files || files.length === 0) {
+        return Promise.resolve([]);
+      }
+      var batches = chunkFilesByBytes_(files, IMAGE_UPLOAD_BATCH_BYTES);
+      var allUrls = [];
+      return batches.reduce(function(chain, batchFiles) {
+        return chain.then(function() {
+          return readFilesAsBase64Payload(batchFiles).then(function(payloads) {
+            return new Promise(function(resolve, reject) {
+              google.script.run.withSuccessHandler(function(res) {
+                if (res && res.success) {
+                  allUrls = allUrls.concat(res.urls || []);
+                  resolve();
+                } else {
+                  reject(new Error((res && res.error) || '圖片上傳失敗'));
+                }
+              }).withFailureHandler(function(err) {
+                reject(err);
+              }).uploadImageBatch(currentToken, payloads);
+            });
+          });
+        });
+      }, Promise.resolve()).then(function() {
+        return allUrls;
+      });
+    }
+
+    // ---- 發文表單（桌面）的圖片清單（圖片張數突破：原本固定 3 格，現在不定長） ----
+    var newArticleImageList = [];
 
     function renderNewArticleImageSlots() {
       var container = document.getElementById('newArticleImageSlotsContainer');
-      if (container) container.innerHTML = renderImageSlotsHtml(newArticleImageSlots, 'setNewArticleImageSlot', 'removeNewArticleImageSlot');
+      if (container) container.innerHTML = renderImageListHtml(newArticleImageList, 'addNewArticleImage', 'removeNewArticleImage');
     }
 
-    function setNewArticleImageSlot(index, inputEl) {
-      var file = inputEl.files && inputEl.files[0];
-      if (!file) return;
-      if (!validateImageFile(file)) { inputEl.value = ''; return; }
-      newArticleImageSlots[index] = file;
+    function addNewArticleImage(inputEl) {
+      tryAddDroppedFiles_(newArticleImageList, inputEl.files, renderNewArticleImageSlots);
+      inputEl.value = ''; // 清空，不然選同一批檔案時瀏覽器不會再次觸發 change
+    }
+
+    function removeNewArticleImage(index) {
+      newArticleImageList.splice(index, 1);
       renderNewArticleImageSlots();
     }
 
-    function removeNewArticleImageSlot(index) {
-      newArticleImageSlots[index] = '';
-      renderNewArticleImageSlots();
-    }
-
-    // ---- 發文表單（手機全螢幕頁）的 3 個圖片格，邏輯同上，狀態各自獨立 ----
-    var mobileNewArticleImageSlots = ['', '', ''];
+    // ---- 發文表單（手機全螢幕頁）的圖片清單，邏輯同上，狀態各自獨立 ----
+    var mobileNewArticleImageList = [];
 
     function renderMobileNewArticleImageSlots() {
       var container = document.getElementById('mobileNewArticleImageSlotsContainer');
-      if (container) container.innerHTML = renderImageSlotsHtml(mobileNewArticleImageSlots, 'setMobileNewArticleImageSlot', 'removeMobileNewArticleImageSlot');
+      if (container) container.innerHTML = renderImageListHtml(mobileNewArticleImageList, 'addMobileNewArticleImage', 'removeMobileNewArticleImage');
     }
 
-    function setMobileNewArticleImageSlot(index, inputEl) {
-      var file = inputEl.files && inputEl.files[0];
-      if (!file) return;
-      if (!validateImageFile(file)) { inputEl.value = ''; return; }
-      mobileNewArticleImageSlots[index] = file;
-      renderMobileNewArticleImageSlots();
+    function addMobileNewArticleImage(inputEl) {
+      tryAddDroppedFiles_(mobileNewArticleImageList, inputEl.files, renderMobileNewArticleImageSlots);
+      inputEl.value = ''; // 清空，不然選同一批檔案時瀏覽器不會再次觸發 change
     }
 
-    function removeMobileNewArticleImageSlot(index) {
-      mobileNewArticleImageSlots[index] = '';
+    function removeMobileNewArticleImage(index) {
+      mobileNewArticleImageList.splice(index, 1);
       renderMobileNewArticleImageSlots();
     }
 
@@ -1619,34 +2511,67 @@
       if (isRequestPending('postArticle')) return; // 連點：已經有一個發文請求還在等 GAS 回應，直接跳過
       var title = document.getElementById('newArticleTitle').value;
       var content = document.getElementById('newArticleContent').value;
-      if (!title || !content) { alert('請填寫標題與內容'); return; }
+      if (!title || !content) { showToast('請填寫標題與內容', 'error'); return; }
 
-      readFilesAsBase64Payload(filesFromImageSlots(newArticleImageSlots)).then(function(images) {
-        beginRequest('postArticle');
+      // 修正：旗標要在圖片開始上傳「之前」就鎖住，不能等 uploadImagesInBatches
+      // resolve 之後才鎖。圖片上傳（尤其分批上傳）本身就會耗時，這段等待期間
+      // 如果旗標還是 false，使用者在空檔連點好幾次「發布文章」，就會各自觸發
+      // 一次全新的 uploadImagesInBatches，把同一批圖片重複上傳好幾份到雲端
+      // 硬碟——旗標卻攔不住，因為它壓根還沒設起來。
+      beginRequest('postArticle');
+
+      // 順手把按鈕鎖住、改字樣：isRequestPending 擋下的第二次點擊原本完全沒有
+      // 任何提示（單純 return），使用者容易誤以為第一下沒按到而一直重按。
+      // 明確顯示「上傳中」才能讓人安心等待，而不是繼續連點。
+      var submitBtn = document.getElementById('btnSubmitPostArticle');
+      if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = '上傳中...'; }
+      function restorePostArticleBtn_() {
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '發布文章'; }
+      }
+
+      uploadImagesInBatches(filesFromImageList(newArticleImageList)).then(function(imageUrls) {
         google.script.run.withSuccessHandler(function(res) {
           endRequest('postArticle');
+          restorePostArticleBtn_();
           if (res.success) {
             document.getElementById('newArticleTitle').value = '';
             document.getElementById('newArticleContent').value = '';
-            newArticleImageSlots = ['', '', ''];
+            newArticleImageList = [];
             renderNewArticleImageSlots();
             togglePostForm(); // 發文後自動收合表單
+            // 實際部署後發現的問題（見對話紀錄）：這裡本來漏了 content 跟
+            // imageUrls，剛發表的文章點開後只看得到標題——loadArticleDetail
+            // 找得到本地快取就直接信任、不重新呼叫伺服器（見該函式說明），
+            // 缺欄位就顯示成空的，要整個重新進板才會因為走一次真正的整批
+            // 讀取補回正確資料。content 前端本來就有，imageUrls 現在
+            // postArticleFromForm 會一併回傳（見 Code.js 的說明）。
             var patched = patchArticleListOnCreate(currentBoardId, res.version, {
               articleId: res.articleId,
               boardId: currentBoardId,
               title: title,
+              content: content,
               author: res.author,
               createdAt: res.createdAt,
-              replyCount: 0
+              editedAt: '',
+              editedBy: '',
+              replyCount: 0,
+              imageUrls: res.imageUrls || []
             });
             if (patched) { renderArticleListFromCache(currentBoardId); } else { loadArticles(currentBoardId); }
           } else {
-            alert('發文失敗: ' + res.error);
+            showToast('發文失敗: ' + res.error, 'error');
           }
         }).withFailureHandler(function(err) {
           endRequest('postArticle');
-          alert('發文失敗，請稍後再試: ' + err.message);
-        }).postArticleFromForm(currentToken, currentBoardId, title, content, images);
+          restorePostArticleBtn_();
+          showToast('發文失敗，請稍後再試: ' + err.message, 'error');
+        }).postArticleFromForm(currentToken, currentBoardId, title, content, imageUrls);
+      }).catch(function(err) {
+        // 修正：beginRequest('postArticle') 現在提早到上傳前就設了，
+        // 上傳失敗也要記得 endRequest，不然旗標卡在 true，之後永遠按不動「發布文章」。
+        endRequest('postArticle');
+        restorePostArticleBtn_();
+        showToast('圖片上傳失敗，請稍後再試: ' + err.message, 'error');
       });
     }
 
@@ -1655,39 +2580,60 @@
       if (isRequestPending('postArticle')) return; // 跟桌面版共用同一把鎖：同一時間本來就不可能兩邊同時發文
       var title = document.getElementById('mobileNewArticleTitle').value;
       var content = document.getElementById('mobileNewArticleContent').value;
-      if (!title || !content) { alert('請填寫標題與內容'); return; }
+      if (!title || !content) { showToast('請填寫標題與內容', 'error'); return; }
 
-      readFilesAsBase64Payload(filesFromImageSlots(mobileNewArticleImageSlots)).then(function(images) {
-        beginRequest('postArticle');
+      // 修正（跟桌面版 handlePostArticle 同一個成因）：旗標提早到圖片上傳前就鎖住。
+      beginRequest('postArticle');
+
+      var mobileSubmitBtn = document.getElementById('btnSubmitMobilePostArticle');
+      if (mobileSubmitBtn) { mobileSubmitBtn.disabled = true; mobileSubmitBtn.textContent = '上傳中...'; }
+      function restoreMobilePostArticleBtn_() {
+        if (mobileSubmitBtn) { mobileSubmitBtn.disabled = false; mobileSubmitBtn.textContent = '發布文章'; }
+      }
+
+      uploadImagesInBatches(filesFromImageList(mobileNewArticleImageList)).then(function(imageUrls) {
         google.script.run.withSuccessHandler(function(res) {
           endRequest('postArticle');
+          restoreMobilePostArticleBtn_();
           if (res.success) {
-            mobileNewArticleImageSlots = ['', '', ''];
+            mobileNewArticleImageList = [];
             renderMobileNewArticleImageSlots();
+            // 實際部署後發現的問題（見對話紀錄，跟桌面版 handlePostArticle
+            // 是同一個成因）：這裡本來漏了 content 跟 imageUrls，補齊理由
+            // 完全一樣，見桌面版那邊的說明。
             var patched = patchArticleListOnCreate(currentBoardId, res.version, {
               articleId: res.articleId,
               boardId: currentBoardId,
               title: title,
+              content: content,
               author: res.author,
               createdAt: res.createdAt,
-              replyCount: 0
+              editedAt: '',
+              editedBy: '',
+              replyCount: 0,
+              imageUrls: res.imageUrls || []
             });
             if (patched) { renderArticleListFromCache(currentBoardId); } else { loadArticles(currentBoardId); }
             closeMobileCompose(); // 送出成功後回到原本畫面（list 或 detail，見 history.back() 的說明）
           } else {
-            alert('發文失敗: ' + res.error);
+            showToast('發文失敗: ' + res.error, 'error');
           }
         }).withFailureHandler(function(err) {
           endRequest('postArticle');
-          alert('發文失敗，請稍後再試: ' + err.message);
-        }).postArticleFromForm(currentToken, currentBoardId, title, content, images);
+          restoreMobilePostArticleBtn_();
+          showToast('發文失敗，請稍後再試: ' + err.message, 'error');
+        }).postArticleFromForm(currentToken, currentBoardId, title, content, imageUrls);
+      }).catch(function(err) {
+        endRequest('postArticle'); // 同上：上傳失敗也要解鎖，不然旗標卡死
+        restoreMobilePostArticleBtn_();
+        showToast('圖片上傳失敗，請稍後再試: ' + err.message, 'error');
       });
     }
 
     function handlePostReply() {
       if (isRequestPending('postReply')) return;
       var content = document.getElementById('replyContentInput').value;
-      if (!content) { alert('請輸入回覆內容'); return; }
+      if (!content) { showToast('請輸入回覆內容', 'error'); return; }
 
       beginRequest('postReply');
       google.script.run.withSuccessHandler(function(res) {
@@ -1703,71 +2649,69 @@
           if (patched) { renderArticleDetail(lastArticleDetail); } else { selectArticle(currentArticleId, null); }
           patchArticleListReplyCount(currentBoardId, currentArticleId, 1);
         } else {
-          alert('回覆失敗: ' + res.error);
+          showToast('回覆失敗: ' + res.error, 'error');
         }
       }).withFailureHandler(function(err) {
         endRequest('postReply');
-        alert('回覆失敗，請稍後再試: ' + err.message);
+        showToast('回覆失敗，請稍後再試: ' + err.message, 'error');
       }).postReplyFromForm(currentToken, currentArticleId, content);
     }
 
     // 8. 刪除文章 / 刪除留言（顯示與否已在 renderArticleDetail 依權限判斷）
     function handleDeleteArticle(articleId) {
       if (isRequestPending('deleteArticle')) return;
-      if (!confirm('確定要刪除這篇文章嗎？留言也會一併刪除，此動作無法復原。')) return;
-
-      beginRequest('deleteArticle');
-      google.script.run.withSuccessHandler(function(res) {
-        endRequest('deleteArticle');
-        if (res.success) {
-          currentArticleId = '';
-          delete articleDetailCache[articleId]; // 優化輪 ticket 04：文章沒了，本地文章詳情快取也一併清掉
-          document.getElementById('rightPanel').innerHTML = '<div class="placeholder-msg">👈 請從左側點選文章查看內容</div>';
-          var patched = patchArticleListOnDelete(res.boardId || currentBoardId, res.version, articleId);
-          if (patched) { renderArticleListFromCache(res.boardId || currentBoardId); } else { loadArticles(currentBoardId); }
-          // 手機版：文章被刪掉了，畫面上不會再有「← 返回列表」按鈕，
-          // 直接透過瀏覽器歷史記錄退回列表畫面（跟 backToList() 走同一條路徑）
-          if (viewMode === 'mobile') {
-            backToList();
+      showConfirm('確定要刪除這篇文章嗎？留言也會一併刪除，此動作無法復原。', function() {
+        beginRequest('deleteArticle');
+        google.script.run.withSuccessHandler(function(res) {
+          endRequest('deleteArticle');
+          if (res.success) {
+            currentArticleId = '';
+            // 效能優化 ticket 05：文章沒了，patchArticleListOnDelete 已經會一併清掉
+            // 統一快取裡對應的 articles/repliesByArticleId，這裡不用再另外處理
+            document.getElementById('rightPanel').innerHTML = '<div class="placeholder-msg">👈 請從左側點選文章查看內容</div>';
+            var patched = patchArticleListOnDelete(res.boardId || currentBoardId, res.version, articleId);
+            if (patched) { renderArticleListFromCache(res.boardId || currentBoardId); } else { loadArticles(currentBoardId); }
+            // 手機版：文章被刪掉了，畫面上不會再有「← 返回列表」按鈕，
+            // 直接透過瀏覽器歷史記錄退回列表畫面（跟 backToList() 走同一條路徑）
+            if (viewMode === 'mobile') {
+              backToList();
+            }
+          } else {
+            showToast('刪除失敗: ' + res.error, 'error');
           }
-        } else {
-          alert('刪除失敗: ' + res.error);
-        }
-      }).withFailureHandler(function(err) {
-        endRequest('deleteArticle');
-        alert('刪除失敗，請稍後再試: ' + err.message);
-      }).deleteArticleFromForm(currentToken, articleId);
+        }).withFailureHandler(function(err) {
+          endRequest('deleteArticle');
+          showToast('刪除失敗，請稍後再試: ' + err.message, 'error');
+        }).deleteArticleFromForm(currentToken, articleId);
+      });
     }
 
     function handleDeleteReply(articleId, replyId) {
       if (isRequestPending('deleteReply')) return;
-      if (!confirm('確定要刪除這則回覆嗎？此動作無法復原。')) return;
-
-      beginRequest('deleteReply');
-      google.script.run.withSuccessHandler(function(res) {
-        endRequest('deleteReply');
-        if (res.success) {
-          var patched = patchArticleDetailOnReplyDelete(articleId, res.version, replyId);
-          if (patched) { renderArticleDetail(lastArticleDetail); } else { selectArticle(articleId, null); }
-          patchArticleListReplyCount(currentBoardId, articleId, -1);
-        } else {
-          alert('刪除失敗: ' + res.error);
-        }
-      }).withFailureHandler(function(err) {
-        endRequest('deleteReply');
-        alert('刪除失敗，請稍後再試: ' + err.message);
-      }).deleteReplyFromForm(currentToken, articleId, replyId);
+      showConfirm('確定要刪除這則回覆嗎？此動作無法復原。', function() {
+        beginRequest('deleteReply');
+        google.script.run.withSuccessHandler(function(res) {
+          endRequest('deleteReply');
+          if (res.success) {
+            var patched = patchArticleDetailOnReplyDelete(articleId, res.version, replyId);
+            if (patched) { renderArticleDetail(lastArticleDetail); } else { selectArticle(articleId, null); }
+            patchArticleListReplyCount(currentBoardId, articleId, -1);
+          } else {
+            showToast('刪除失敗: ' + res.error, 'error');
+          }
+        }).withFailureHandler(function(err) {
+          endRequest('deleteReply');
+          showToast('刪除失敗，請稍後再試: ' + err.message, 'error');
+        }).deleteReplyFromForm(currentToken, articleId, replyId);
+      });
     }
 
     // 9. 編輯文章（擁有者或 admin）
     function handleStartEditArticle() {
-      // ticket 10：把目前的 3 個圖片欄位存進編輯用的暫存狀態，讓使用者可以個別新增/替換/移除
+      // 圖片張數突破：把目前的圖片清單存進編輯用的暫存狀態（複製一份，
+      // 不要共用同一個陣列參考，避免編輯過程中不小心動到快取裡的原始資料）
       var article = lastArticleDetail && lastArticleDetail.article;
-      editImageSlots = [
-        (article && article.imageUrl1) || '',
-        (article && article.imageUrl2) || '',
-        (article && article.imageUrl3) || ''
-      ];
+      editImageList = (article && article.imageUrls) ? article.imageUrls.slice() : [];
       isEditingArticle = true;
       renderArticleDetail(lastArticleDetail);
     }
@@ -1777,34 +2721,51 @@
       renderArticleDetail(lastArticleDetail);
     }
 
-    // 把 editImageSlots（字串=保留既有連結 / File 物件=新選的圖片 / ''=空）轉成
-    // 要送給 editArticleFromForm 的格式：字串照傳，File 轉成 base64 物件
+    // 圖片自動分批上傳：editImageList（字串=保留既有連結 / File 物件=新選的
+    // 圖片）轉成要送給 editArticleFromForm 的格式。挑出所有 File，一次交給
+    // uploadImagesInBatches 依大小自動分批上傳，拿回的連結依原本在
+    // editImageList 裡的位置塞回去，字串原樣保留——回傳的陣列全部都是字串，
+    // 跟後端 editArticleFromForm 現在只接受「已經上傳好的連結」一致，不用
+    // 再把整批 base64 一次送進單一個 google.script.run 請求。
     function buildImageSlotsPayload() {
-      return Promise.all(editImageSlots.map(function(slot) {
+      var fileIndexes = [];
+      var files = [];
+      editImageList.forEach(function(slot, i) {
         if (slot instanceof File) {
-          return new Promise(function(resolve, reject) {
-            var reader = new FileReader();
-            reader.onload = function() {
-              resolve({ data: reader.result.split(',')[1], mimeType: slot.type, fileName: slot.name });
-            };
-            reader.onerror = function() { reject(reader.error); };
-            reader.readAsDataURL(slot);
-          });
+          fileIndexes.push(i);
+          files.push(slot);
         }
-        return Promise.resolve(slot || '');
-      }));
+      });
+      return uploadImagesInBatches(files).then(function(uploadedUrls) {
+        var result = editImageList.slice();
+        fileIndexes.forEach(function(slotIndex, j) {
+          result[slotIndex] = uploadedUrls[j];
+        });
+        return result;
+      });
     }
 
     function handleSaveEditArticle(articleId) {
       if (isRequestPending('saveEditArticle')) return;
       var title = document.getElementById('editArticleTitle').value;
       var content = document.getElementById('editArticleContent').value;
-      if (!title || !content) { alert('請填寫標題與內容'); return; }
+      if (!title || !content) { showToast('請填寫標題與內容', 'error'); return; }
+
+      // 修正（跟 handlePostArticle 同一個成因）：buildImageSlotsPayload 內部一樣會呼叫
+      // uploadImagesInBatches，一樣要在上傳開始前就鎖旗標，不能等 resolve 才鎖，
+      // 不然編輯文章時連點「儲存」也會把新選的圖片重複上傳好幾份。
+      beginRequest('saveEditArticle');
+
+      var saveBtn = document.getElementById('btnSaveEditArticle');
+      if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = '上傳中...'; }
+      function restoreSaveEditBtn_() {
+        if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '儲存'; }
+      }
 
       buildImageSlotsPayload().then(function(imageSlots) {
-        beginRequest('saveEditArticle');
         google.script.run.withSuccessHandler(function(res) {
           endRequest('saveEditArticle');
+          restoreSaveEditBtn_();
           if (res.success) {
             isEditingArticle = false;
             var patchedDetail = patchArticleDetailOnEdit(articleId, res.articleVersion, title, content, res.editedAt, res.editedBy, res.imageUrls);
@@ -1812,20 +2773,174 @@
             var patched = patchArticleListOnEdit(res.boardId || currentBoardId, res.version, articleId, title);
             if (patched) { renderArticleListFromCache(res.boardId || currentBoardId); } else { loadArticles(currentBoardId); }
           } else {
-            alert('儲存失敗: ' + res.error);
+            showToast('儲存失敗: ' + res.error, 'error');
           }
         }).withFailureHandler(function(err) {
           endRequest('saveEditArticle');
-          alert('儲存失敗，請稍後再試: ' + err.message);
+          restoreSaveEditBtn_();
+          showToast('儲存失敗，請稍後再試: ' + err.message, 'error');
         }).editArticleFromForm(currentToken, articleId, title, content, imageSlots);
+      }).catch(function(err) {
+        // 修正：beginRequest('saveEditArticle') 現在提早到上傳前就設了，
+        // 上傳失敗也要 endRequest，不然「儲存」按鈕會永遠卡住按不動。
+        endRequest('saveEditArticle');
+        restoreSaveEditBtn_();
+        showToast('圖片上傳失敗，請稍後再試: ' + err.message, 'error');
       });
     }
 
-    // 10. 分享文章連結（任何看得到這篇文章的人都能分享；對方打開時仍會走一樣的權限檢查）
+    // 10. 分享文章連結（任何看得到這篇文章的人都能分享；對方打開時仍會走一樣的權限檢查）。
+    // 優先用原生分享（navigator.share）——手機上會跳出系統的分享面板（LINE/訊息/信件…）。
+    // 使用者自己取消分享面板是正常操作，不當成錯誤處理。
+    //
+    // 修正：上一版把「複製成功」的確認訊息用 alert() 顯示，結果手機上還是看到同樣的
+    // 問題——alert()／prompt()／confirm() 這三個原生對話框全部都會把目前頁面的真實
+    // 網域（GAS 沙盒 iframe 的 ...script.googleusercontent.com）當成對話框標題一起
+    // 顯示出來，這是瀏覽器自己的安全機制（讓使用者知道是「誰」在跳對話框），JS 沒有
+    // 辦法關掉或客製化，只能整個不要用這三個函式。這裡全面改用自己畫的 UI：
+    // showToast() 顯示「已複製」這種短暫確認訊息（見上方 .app-toast 樣式），
+    // 複製失敗時開 shareLinkPopup（沿用既有的 .board-list-popup 樣式）取代 prompt()。
+    // 不支援 navigator.share 的環境（例如桌面版舊瀏覽器）退回複製到剪貼簿；
+    // 連剪貼簿 API 都失敗時才彈出分享連結彈窗。
     function handleShareArticle(boardId, articleId) {
-  var link = scriptBaseUrl + '?board=' + encodeURIComponent(boardId) + '&article=' + encodeURIComponent(articleId);
-  prompt('複製下面的連結分享（沒有觀看權限的人打開會看不到內容）：', link);
-}
+      var link = scriptBaseUrl + '?board=' + encodeURIComponent(boardId) + '&article=' + encodeURIComponent(articleId);
+
+      if (navigator.share) {
+        navigator.share({ url: link }).catch(function(err) {
+          if (err && err.name === 'AbortError') return; // 使用者自己取消分享面板，不是錯誤
+          copyShareLinkOrShowPopup_(link);
+        });
+        return;
+      }
+
+      copyShareLinkOrShowPopup_(link);
+    }
+
+    // 判斷目前瀏覽器是否跑在 LINE 有原生 App 的平台（iOS / Android）。
+    //
+    // 修正記錄：原本以為「桌面版沒裝 LINE 時會被導去瀏覽器提示下載」，這個假設沒有
+    // 實測過就寫進註解——使用者在桌面版（寬螢幕）實測後回報：桌面版點下去，
+    // https://line.me/R/share?text=... 只是直接跳轉到 line.me 官網首頁，完全沒有
+    // 分享功能，也沒有任何下載提示。查證後確認原因：這個 URL scheme 設計上是給手機
+    // 瀏覽器攔截、轉交給 LINE App 處理的，本質上不是一個真正會回應內容的網頁；桌面版
+    // 瀏覽器沒有 LINE App 可以攔截這個網址，line.me 收到這個路徑後就單純轉址回首頁。
+    // 沒有找到官方文件記載的「LINE for PC 版分享」對應 URL scheme，與其留一個看起來
+    // 存在、點下去卻沒作用的按鈕，改成只在偵測到手機作業系統時才顯示這顆按鈕
+    // （見 renderArticleDetail 呼叫這支函式的地方）。桌面版使用者仍然可以用旁邊
+    // 一律有效的「🔗 分享」按鈕（複製連結後自行貼到 LINE 桌面版即可）。
+    function isMobileLineCapable_() {
+      return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent || '');
+    }
+
+    // 分享到 LINE：用 LINE 官方文件記載的 URL scheme（https://line.me/R/share?text=...），
+    // 開啟 LINE 的「分享對象」畫面，可以選好友、群組聊天，官方文件也明確寫「使用者也可以
+    // 傳送到 Keep Memo」——所以這一支同時涵蓋「分享到 LINE 對話」跟「分享到 LINE
+    // Keep」兩種需求，不需要另外做兩套。只支援 LINE for iOS / Android，按鈕本身也只在
+    // isMobileLineCapable_() 為真時才會被畫出來（見上方說明），這裡的檢查是第二道防線。
+    // 沿用 handleStartEditArticle 等既有函式的模式：不透過 inline 參數傳文章標題
+    // （自由文字，直接塞進 onclick 屬性字串有跳脫風險），改成從 lastArticleDetail
+    // 讀取目前正在顯示的文章。
+    // 參考：https://developers.line.biz/en/docs/line-login/using-line-url-scheme/#send-text-message
+    function handleShareToLine() {
+      if (!isMobileLineCapable_()) return;
+      var article = lastArticleDetail && lastArticleDetail.article;
+      if (!article) return;
+      var link = scriptBaseUrl + '?board=' + encodeURIComponent(article.boardId) + '&article=' + encodeURIComponent(article.articleId);
+      var text = article.title + ' ' + link;
+      window.open('https://line.me/R/share?text=' + encodeURIComponent(text), '_blank');
+    }
+
+    function copyShareLinkOrShowPopup_(link) {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(link).then(function() {
+          showToast('連結已複製到剪貼簿', 'success');
+        }).catch(function() {
+          openShareLinkPopup_(link);
+        });
+        return;
+      }
+      openShareLinkPopup_(link);
+    }
+
+    var shareLinkPopupValue_ = ''; // 分享連結彈窗目前顯示的連結，供「複製連結」按鈕讀取
+
+    function openShareLinkPopup_(link) {
+      shareLinkPopupValue_ = link;
+      document.getElementById('shareLinkInput').value = link;
+      document.getElementById('shareLinkPopup').classList.add('open');
+    }
+
+    function closeShareLinkPopup() {
+      document.getElementById('shareLinkPopup').classList.remove('open');
+    }
+
+    function copyShareLinkFromPopup() {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(shareLinkPopupValue_).then(function() {
+          showToast('連結已複製到剪貼簿', 'success');
+          closeShareLinkPopup();
+        }).catch(function() {
+          // 連使用者主動點按鈕（明確的 user gesture）當下都失敗，代表這個環境的剪貼簿
+          // API 整個不能用——保留輸入框讓使用者自己長按選取、手動複製，不強制關窗
+          document.getElementById('shareLinkInput').select();
+        });
+        return;
+      }
+      document.getElementById('shareLinkInput').select();
+    }
+
+    // 輕量提示：取代 alert() 顯示短暫確認/錯誤訊息，不會觸發原生對話框的網域顯示
+    // 問題（見上方 .app-toast 樣式與 handleShareArticle 的說明）。同時間只保留一則
+    // （新的一則會把還沒消失的舊的一則直接換掉，不會疊在一起）。
+    // @param {string} message
+    // @param {'success'|'error'} [type] - 預設 'success'；error 樣式是紅底，顯示
+    //   時間也比較長（失敗訊息通常比「已複製」這種確認訊息長，需要多一點時間讀完）
+    function showToast(message, type) {
+      var existing = document.getElementById('appToast');
+      if (existing) existing.remove();
+
+      var toast = document.createElement('div');
+      toast.id = 'appToast';
+      toast.className = 'app-toast' + (type === 'error' ? ' error' : '');
+      toast.textContent = message;
+      document.body.appendChild(toast);
+
+      requestAnimationFrame(function() {
+        toast.classList.add('show');
+      });
+
+      var duration = (type === 'error') ? 4000 : 2500;
+      setTimeout(function() {
+        toast.classList.remove('show');
+        setTimeout(function() { toast.remove(); }, 200);
+      }, duration);
+    }
+
+    // 通用確認彈窗：取代 confirm()，理由同上。confirm() 是同步的（呼叫端可以直接
+    // `if (!confirm(...)) return;`），DOM 彈窗天生是非同步的（要等使用者按按鈕），
+    // 所以呼叫端要改成把「使用者按下確定之後才要做的事」包成 callback 傳進來，
+    // 而不是直接檢查回傳值。
+    // @param {string} message
+    // @param {Function} onConfirm - 使用者按下「確定」時執行；按「取消」或點背景
+    //   關閉則什麼都不做
+    var confirmPopupOnConfirm_ = null;
+
+    function showConfirm(message, onConfirm) {
+      document.getElementById('confirmPopupMessage').textContent = message;
+      confirmPopupOnConfirm_ = onConfirm;
+      document.getElementById('confirmPopup').classList.add('open');
+    }
+
+    function closeConfirmPopup() {
+      document.getElementById('confirmPopup').classList.remove('open');
+      confirmPopupOnConfirm_ = null;
+    }
+
+    function handleConfirmPopupYes() {
+      var callback = confirmPopupOnConfirm_;
+      closeConfirmPopup();
+      if (callback) callback();
+    }
 
     // 工具函式：跳脫 HTML 避免 XSS
     function escapeHtml(str) {

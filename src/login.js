@@ -13,6 +13,7 @@
  * created.
  */
 var _register = (typeof require !== 'undefined') ? require('./register') : null;
+var _schemaModule = (typeof require !== 'undefined') ? require('./schema') : null;
 
 function hashPasswordFor_(password, salt, digestFn) {
   return (_register ? _register.hashPassword : hashPassword)(password, salt, digestFn);
@@ -28,6 +29,7 @@ function verifyPassword(storedHash, salt, candidatePassword, digestFn) {
 
 var LOGIN_FAIL_PREFIX = 'loginFail_';
 var SESSION_PREFIX = 'session_';
+var SESSION_SNAPSHOT_PREFIX = 'sessionPerm_';
 var LOGIN_FAIL_THRESHOLD = 5;
 var LOGIN_FAIL_TTL_SECONDS = 900; // 15 minutes
 var SESSION_TTL_SECONDS = 21600; // 6 hours — also CacheService's own max TTL
@@ -68,6 +70,40 @@ function getUserRecord_(sheet, userId) {
 }
 
 /**
+ * Whether a role is currently allowed to log in, per the Permission
+ * sheet's `login` column. Deliberately NOT routed through permissions.js's
+ * getRolePermissions — permissions.js already requires login.js (for
+ * getSessionRole's reuse of getUserRecord_), and requiring permissions.js
+ * back from here would create a circular require. Node resolves that
+ * inconsistently depending on which of the two files a test happens to
+ * require first, handing the *other* file a half-populated module.exports
+ * — a landmine that wouldn't surface at require-time, only whenever the
+ * stale reference actually gets called. Rather than touch that existing,
+ * working dependency direction, this is a small local lookup instead —
+ * same tradeoff this codebase already makes elsewhere (e.g.
+ * findArticleBoardId_ duplicated across postReply.js/deleteReply.js
+ * rather than shared) in favor of avoiding cross-file coupling.
+ * Fails safe: unknown/removed role returns false, same as
+ * getRolePermissions would.
+ */
+function roleAllowsLogin_(spreadsheet, role) {
+  var sheet = spreadsheet.getSheetByName('Permission');
+  var lastRow = sheet.getLastRow();
+  if (lastRow <= 1) {
+    return false;
+  }
+  var headers = (_schemaModule ? _schemaModule.SHEET_HEADERS : SHEET_HEADERS).Permission;
+  var loginCol = headers.indexOf('login'); // 0-indexed, matches getValues() row shape
+  var rows = sheet.getRange(2, 1, lastRow - 1, headers.length).getValues();
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i][0] === role) {
+      return !!rows[i][loginCol];
+    }
+  }
+  return false;
+}
+
+/**
  * @param {Spreadsheet} spreadsheet
  * @param {Cache} cache - e.g. CacheService.getScriptCache()
  * @param {function(): string} tokenGenerator - e.g. Utilities.getUuid
@@ -97,6 +133,14 @@ function login(spreadsheet, cache, tokenGenerator, digestFn, nowTimestamp, input
     return { success: false, error: 'userId 或密碼錯誤' };
   }
 
+  // 權限系統 ticket 09：密碼驗證通過後才檢查登入權限，訊息刻意跟密碼錯誤
+  // 完全相同、也不佔用鎖定計數——這是角色被擋，不是猜密碼，兩者是不同的
+  // 拒絕原因，不該共用同一個計數器（否則被停權的帳號被外部一直嘗試，反而
+  // 可能先把自己鎖起來）。
+  if (!roleAllowsLogin_(spreadsheet, record.role)) {
+    return { success: false, error: 'userId 或密碼錯誤' };
+  }
+
   var previousLoginCount = record.loginCount || 0;
   var previousLastLoginAt = record.lastLoginAt || '';
   var newLoginCount = previousLoginCount + 1;
@@ -116,11 +160,59 @@ function login(spreadsheet, cache, tokenGenerator, digestFn, nowTimestamp, input
   };
 }
 
+/**
+ * Stores a read-path permission snapshot (built by boards.js's
+ * buildRoleSnapshot) under its own keyspace, separate from
+ * SESSION_PREFIX's userId value — so every existing write-path caller
+ * that reads SESSION_PREFIX + token expecting a bare userId string
+ * keeps working completely unchanged (perf-optimization ticket 03).
+ * Same TTL as the session token itself.
+ * @param {Cache} cache
+ * @param {string} token
+ * @param {{permissions: Object, allowedBoardIds: string[]}} snapshot
+ */
+function putSessionSnapshot(cache, token, snapshot) {
+  cache.put(SESSION_SNAPSHOT_PREFIX + token, JSON.stringify(snapshot), SESSION_TTL_SECONDS);
+}
+
+/**
+ * @param {Cache} cache
+ * @param {string} token
+ * @returns {{permissions: Object, allowedBoardIds: string[]}|null} null
+ *   when nothing was stored, the entry expired, or the stored value
+ *   isn't valid JSON (fails safe — callers treat null exactly like "not
+ *   logged in").
+ */
+function getSessionSnapshot(cache, token) {
+  var raw = cache.get(SESSION_SNAPSHOT_PREFIX + token);
+  if (!raw) {
+    return null;
+  }
+  try {
+    return JSON.parse(raw);
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * @param {Cache} cache
+ * @param {string} token
+ */
+function removeSessionSnapshot(cache, token) {
+  cache.remove(SESSION_SNAPSHOT_PREFIX + token);
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     verifyPassword: verifyPassword,
     login: login,
     getUserRecord_: getUserRecord_,
-    SESSION_PREFIX: SESSION_PREFIX
+    SESSION_PREFIX: SESSION_PREFIX,
+    SESSION_SNAPSHOT_PREFIX: SESSION_SNAPSHOT_PREFIX,
+    SESSION_TTL_SECONDS: SESSION_TTL_SECONDS,
+    putSessionSnapshot: putSessionSnapshot,
+    getSessionSnapshot: getSessionSnapshot,
+    removeSessionSnapshot: removeSessionSnapshot
   };
 }

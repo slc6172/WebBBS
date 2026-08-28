@@ -10,10 +10,10 @@ function seedArticle(sheet, overrides) {
   var defaults = {
     articleId: 'a1', boardId: 'gossip', title: '標題', author: 'alice01',
     content: '內文', createdAt: '2026/07/30 12:00:00', editedAt: '', editedBy: '', replyCount: 0,
-    imageUrl1: '', imageUrl2: '', imageUrl3: ''
+    imageUrls: []
   };
   var a = Object.assign({}, defaults, overrides);
-  sheet.appendRow([a.articleId, a.boardId, a.title, a.author, a.content, a.createdAt, a.editedAt, a.editedBy, a.replyCount, a.imageUrl1, a.imageUrl2, a.imageUrl3]);
+  sheet.appendRow([a.articleId, a.boardId, a.title, a.author, a.content, a.createdAt, a.editedAt, a.editedBy, a.replyCount, JSON.stringify(a.imageUrls)]);
 }
 
 function seedReply(sheet, overrides) {
@@ -48,13 +48,33 @@ test('deleteArticle deletes the article\'s Drive images too, not just the Sheets
   const properties = createFakeProperties();
   const img1 = saveArticleImage(drive, properties, 'a', 'image/png', 'a.png', '2026-08');
   const img2 = saveArticleImage(drive, properties, 'b', 'image/png', 'b.png', '2026-08');
-  seedArticle(ss.getSheetByName('Articles'), { articleId: 'a1', imageUrl1: img1.url, imageUrl2: img2.url });
+  seedArticle(ss.getSheetByName('Articles'), { articleId: 'a1', imageUrls: [img1.url, img2.url] });
   const lock = createFakeLock();
 
   deleteArticle(ss, lock, 'alice01', 'a1', false, drive);
 
   expect(drive._files[img1.fileId]).toBeUndefined();
   expect(drive._files[img2.fileId]).toBeUndefined();
+});
+
+// ---- 圖片張數突破 ----
+
+test('deleteArticle deletes all Drive images for an article with more than 3 images', () => {
+  const ss = createFakeSpreadsheet();
+  ensureSchema(ss);
+  const drive = createFakeDrive();
+  const properties = createFakeProperties();
+  const saved = ['a', 'b', 'c', 'd', 'e'].map(function (letter) {
+    return saveArticleImage(drive, properties, letter, 'image/png', letter + '.png', '2026-08');
+  });
+  seedArticle(ss.getSheetByName('Articles'), { articleId: 'a1', imageUrls: saved.map(function (s) { return s.url; }) });
+  const lock = createFakeLock();
+
+  deleteArticle(ss, lock, 'alice01', 'a1', false, drive);
+
+  saved.forEach(function (s) {
+    expect(drive._files[s.fileId]).toBeUndefined();
+  });
 });
 
 test('deleteArticle does not attempt any Drive calls when the article has no images', () => {

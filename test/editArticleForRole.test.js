@@ -11,13 +11,18 @@ function seedArticle(sheet, overrides) {
   sheet.appendRow([a.articleId, a.boardId, a.title, a.author, a.content, a.createdAt, a.editedAt, a.editedBy, a.replyCount]);
 }
 
+function seedBoard(ss, row) {
+  ss.getSheetByName('Boards').appendRow(row);
+}
+
 function makeUpdates(overrides) {
   return Object.assign({ title: '新標題', content: '新內文', editedAt: '2026/07/30 18:00:00' }, overrides);
 }
 
-test('editArticleForRole edits the article when role passes the gate and the requester owns it', () => {
+test('editArticleForRole edits the article when role has articleManageOwn, owns it, and the board\'s AllowRoles allows it', () => {
   const ss = createFakeSpreadsheet();
   ensureSchema(ss);
+  seedBoard(ss, ['gossip', '八卦板', '閒聊', 1, '', '', 'ALL']);
   seedArticle(ss.getSheetByName('Articles'), {});
 
   const result = editArticleForRole(ss, 'user', 'alice01', 'a1', makeUpdates());
@@ -28,6 +33,7 @@ test('editArticleForRole edits the article when role passes the gate and the req
 test('editArticleForRole rejects newbie and makes no changes, even for the article owner', () => {
   const ss = createFakeSpreadsheet();
   ensureSchema(ss);
+  seedBoard(ss, ['gossip', '八卦板', '閒聊', 1, '', '', 'ALL']);
   seedArticle(ss.getSheetByName('Articles'), {});
 
   const result = editArticleForRole(ss, 'newbie', 'alice01', 'a1', makeUpdates());
@@ -37,9 +43,10 @@ test('editArticleForRole rejects newbie and makes no changes, even for the artic
   expect(row[2]).toBe('原標題');
 });
 
-test('editArticleForRole lets an admin edit someone else\'s article, recording editedBy as the admin', () => {
+test('editArticleForRole lets an admin edit someone else\'s article, recording editedBy as the admin, ignoring AllowRoles entirely', () => {
   const ss = createFakeSpreadsheet();
   ensureSchema(ss);
+  seedBoard(ss, ['gossip', '八卦板', '閒聊', 1, '', '', '']); // blank — nobody but admin
   seedArticle(ss.getSheetByName('Articles'), { author: 'alice01' });
 
   const result = editArticleForRole(ss, 'admin', 'admin01', 'a1', makeUpdates());
@@ -47,4 +54,42 @@ test('editArticleForRole lets an admin edit someone else\'s article, recording e
   expect(result).toEqual({ success: true });
   const row = ss.getSheetByName('Articles').getRange(2, 1, 1, 9).getValues()[0];
   expect(row[7]).toBe('admin01');
+});
+
+test('editArticleForRole rejects a role with articleManageOwn when the article\'s board AllowRoles excludes it, and makes no changes', () => {
+  const ss = createFakeSpreadsheet();
+  ensureSchema(ss);
+  seedBoard(ss, ['gossip', '八卦板', '閒聊', 1, '', '', 'admin']);
+  seedArticle(ss.getSheetByName('Articles'), {});
+
+  const result = editArticleForRole(ss, 'user', 'alice01', 'a1', makeUpdates());
+
+  expect(result).toEqual({ success: false, error: '權限不足' });
+  const row = ss.getSheetByName('Articles').getRange(2, 1, 1, 9).getValues()[0];
+  expect(row[2]).toBe('原標題');
+});
+
+test('editArticleForRole rejects a role without articleManageOwn even though the board\'s AllowRoles would allow it', () => {
+  const ss = createFakeSpreadsheet();
+  ensureSchema(ss);
+  seedBoard(ss, ['gossip', '八卦板', '閒聊', 1, '', '', 'ALL']);
+  seedArticle(ss.getSheetByName('Articles'), { author: 'carol03' });
+  // Custom role: can read/post articles, but cannot manage even its own.
+  ss.getSheetByName('Permission').appendRow(
+    ['post-only', true, true, false, true, true, false, false, true]
+  );
+
+  const result = editArticleForRole(ss, 'post-only', 'carol03', 'a1', makeUpdates());
+
+  expect(result).toEqual({ success: false, error: '權限不足' });
+});
+
+test('editArticleForRole still returns "文章不存在" for a non-admin role when the article doesn\'t exist, not a permission error', () => {
+  const ss = createFakeSpreadsheet();
+  ensureSchema(ss);
+  seedBoard(ss, ['gossip', '八卦板', '閒聊', 1, '', '', 'ALL']);
+
+  const result = editArticleForRole(ss, 'user', 'alice01', 'does-not-exist', makeUpdates());
+
+  expect(result).toEqual({ success: false, error: '文章不存在' });
 });

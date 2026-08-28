@@ -21,6 +21,22 @@
 var ROOT_FOLDER_PROPERTY_KEY = 'IMAGE_ROOT_FOLDER_ID';
 var ROOT_FOLDER_NAME = 'BBS 圖片';
 
+// 圖片張數突破：文章圖片上限，取代舊有的固定 3 張限制。共用常數，
+// resolveImageSlots（編輯路徑）跟 postArticle.js 的 createArticle（新文章
+// 路徑）都用同一個數字，避免兩處各寫一次容易兜不起來。
+var MAX_IMAGES_PER_ARTICLE = 99;
+
+/**
+ * @param {number} count
+ * @returns {{valid: boolean, error?: string}}
+ */
+function validateImageCount(count) {
+  if (count > MAX_IMAGES_PER_ARTICLE) {
+    return { valid: false, error: '圖片數量超過上限' };
+  }
+  return { valid: true };
+}
+
 /**
  * 取得圖片根資料夾；指令碼屬性沒設定過，或設定的 ID 已經失效（例如資料夾被
  * 手動刪除），都視為「尚未設定」，自動建立一個新資料夾並把 ID 寫回指令碼屬性。
@@ -106,6 +122,67 @@ function extractFileIdFromUrl(url) {
   return queryMatch ? queryMatch[1] : null;
 }
 
+/**
+ * 安全性審查 H3 修復。這是原本整個寫在 Code.js 的 resolveImageSlots_
+ * 拆出來的純邏輯部分——比照本專案「純邏輯放獨立、可測檔案，GAS glue
+ * 留在 Code.js」的既有慣例（跟 editArticle.js/postArticle.js 的分工方式
+ * 一致）。之所以要拆出來：Code.js 不會被任何測試檔案 require（見專案
+ * 慣例），這正是 H3 那個「客戶端可以塞任意字串進 imageUrl1~3」的漏洞
+ * 一直沒被任何測試發現的根本原因——邏輯本身沒有問題，是它活在測試永遠
+ * 碰不到的地方。
+ *
+ * 把前端送來的「圖片格」清單分類（圖片張數突破：原本固定 3 格，現在是
+ * 任意長度，上限見 MAX_IMAGES_PER_ARTICLE），但不實際呼叫 Drive 上傳
+ * （那一步需要 GAS 的 DriveApp，留給 Code.js 的 resolveImageSlots_ 做）：
+ *   - {data, mimeType, fileName} 物件：這是新選的圖片，記下 index，回傳
+ *     給呼叫端自己去上傳。
+ *   - 字串：代表「保留既有連結」，必須完全等於 existingImageUrls 裡的
+ *     其中一個值，或是空字串（代表清空這一格）——不再照單全收客戶端聲稱
+ *     的任意字串。不符合就整個拒絕（error 不為 null），呼叫端要整個
+ *     拒絕這次編輯請求，不要悄悄把這一格當空白處理。
+ * @param {Array} imageSlots
+ * @param {Array<string>} [existingImageUrls] - 這篇文章目前的 imageUrls
+ *   陣列；省略視為 []。
+ * @returns {{resolved: (Array|undefined|null), newImages: Array, newImageSlotIndexes: number[], error: (string|null)}}
+ */
+/**
+ * 圖片張數突破：resolveImageSlots 的輸出仍然是跟輸入等長、可能留有空位的
+ * 陣列（例如某一格被移除、或新圖片還沒回填上傳結果前的佔位）。最終要寫進
+ * Sheets 的 imageUrls 欄位不留空缺，這支函式在寫入前把空字串濾掉。
+ * @param {Array<string>} urls
+ * @returns {Array<string>}
+ */
+function compactImageUrls(urls) {
+  return (urls || []).filter(function (u) { return u; });
+}
+
+function resolveImageSlots(imageSlots, existingImageUrls) {
+  if (!imageSlots) {
+    return { resolved: undefined, newImages: [], newImageSlotIndexes: [], error: null };
+  }
+  var countCheck = validateImageCount(imageSlots.length);
+  if (!countCheck.valid) {
+    return { resolved: null, newImages: [], newImageSlotIndexes: [], error: countCheck.error };
+  }
+  var existing = existingImageUrls || [];
+  var resolved = new Array(imageSlots.length).fill('');
+  var newImages = [];
+  var newImageSlotIndexes = [];
+  for (var i = 0; i < imageSlots.length; i++) {
+    var slot = imageSlots[i];
+    if (slot && typeof slot === 'object' && slot.data) {
+      newImages.push(slot);
+      newImageSlotIndexes.push(i);
+    } else if (typeof slot === 'string') {
+      if (slot !== '' && existing.indexOf(slot) === -1) {
+        return { resolved: null, newImages: [], newImageSlotIndexes: [], error: '圖片資料異常' };
+      }
+      resolved[i] = slot;
+    }
+  }
+  return { resolved: resolved, newImages: newImages, newImageSlotIndexes: newImageSlotIndexes, error: null };
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     getOrCreateRootFolder: getOrCreateRootFolder,
@@ -113,6 +190,10 @@ if (typeof module !== 'undefined' && module.exports) {
     saveArticleImage: saveArticleImage,
     deleteArticleImage: deleteArticleImage,
     extractFileIdFromUrl: extractFileIdFromUrl,
+    resolveImageSlots: resolveImageSlots,
+    compactImageUrls: compactImageUrls,
+    validateImageCount: validateImageCount,
+    MAX_IMAGES_PER_ARTICLE: MAX_IMAGES_PER_ARTICLE,
     ROOT_FOLDER_PROPERTY_KEY: ROOT_FOLDER_PROPERTY_KEY,
     ROOT_FOLDER_NAME: ROOT_FOLDER_NAME
   };

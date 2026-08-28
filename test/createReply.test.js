@@ -94,3 +94,14 @@ test('createReply rejects a reply to a nonexistent article and does not write an
   expect(result).toEqual({ success: false, error: '文章不存在' });
   expect(ss.getSheetByName('Replies').getLastRow()).toBe(1);
 });
+
+test('createReply reads the Articles sheet at most once per call', () => {
+  const ss = createFakeSpreadsheet();
+  ensureSchema(ss);
+  seedArticle(ss.getSheetByName('Articles'), {});
+  const lock = createFakeLock();
+
+  createReply(ss, lock, makeInput());
+
+  expect(ss.getSheetByName('Articles')._getReadCount()).toBeLessThanOrEqual(1);
+});

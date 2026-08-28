@@ -4,9 +4,14 @@
 var _permissionsModule = (typeof require !== 'undefined') ? require('./permissions') : null;
 var _userStatsModule = (typeof require !== 'undefined') ? require('./userStats') : null;
 var _imageStorageModule = (typeof require !== 'undefined') ? require('./imageStorage') : null;
+var _boardsModule = (typeof require !== 'undefined') ? require('./boards') : null;
 
-function gateByRoleFor_(role, allowedRoles) {
-  return (_permissionsModule ? _permissionsModule.gateByRole : gateByRole)(role, allowedRoles);
+function getRolePermissionsFor_(spreadsheet, role) {
+  return (_permissionsModule ? _permissionsModule.getRolePermissions : getRolePermissions)(spreadsheet, role);
+}
+
+function boardAllowsRoleByIdFor_(spreadsheet, boardId, role) {
+  return (_boardsModule ? _boardsModule.boardAllowsRoleById : boardAllowsRoleById)(spreadsheet, boardId, role);
 }
 
 function incrementUserStatFor_(usersSheet, userId, statName, delta) {
@@ -23,24 +28,44 @@ function deleteArticleImageFor_(drive, fileId) {
 
 /**
  * Finds the row number, author, and image URLs for an articleId, or null.
- * 優化輪 ticket 10：多帶出 imageUrl1~3，刪除文章時才知道要一併清掉哪些 Drive 檔案。
+ * 優化輪 ticket 10：多帶出 imageUrls，刪除文章時才知道要一併清掉哪些 Drive 檔案。
  */
 function findArticleRowAndAuthor_(sheet, articleId) {
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) {
     return null;
   }
-  var rows = sheet.getRange(2, 1, lastRow - 1, 12).getValues();
+  var rows = sheet.getRange(2, 1, lastRow - 1, 10).getValues();
   for (var i = 0; i < rows.length; i++) {
     if (rows[i][0] === articleId) {
       return {
         rowNumber: i + 2,
+        boardId: rows[i][1],
         author: rows[i][3],
-        imageUrls: [rows[i][9], rows[i][10], rows[i][11]].filter(function (u) { return u; })
+        imageUrls: parseImageUrlsCell_(rows[i][9])
       };
     }
   }
   return null;
+}
+
+/**
+ * 圖片張數突破：Articles 表的圖片欄位從 imageUrl1~3 三欄合併成單一個
+ * JSON 陣列字串欄位。空值的標準表示法是 '[]'；任何無法解析的內容（理論上
+ * 不該發生，防禦性處理）都當成沒有圖片，不噴錯。
+ * @param {string} cellValue
+ * @returns {Array<string>}
+ */
+function parseImageUrlsCell_(cellValue) {
+  if (!cellValue) {
+    return [];
+  }
+  try {
+    var parsed = JSON.parse(cellValue);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    return [];
+  }
 }
 
 /**
@@ -118,12 +143,27 @@ function deleteArticle(spreadsheet, lock, requestingUserId, articleId, isAdmin, 
 }
 
 /**
- * Only role=user/admin may delete at all; the ownership check inside
- * deleteArticle still applies on top of this.
+ * admin bypasses everything below (Permission table + AllowRoles), same
+ * hardcoded special case as editArticle.js. Non-admin roles need the
+ * articleManageOwn permission AND the article's own board's AllowRoles
+ * to allow them. This lookup happens before the lock is acquired — it's
+ * purely a permission gate, not the authoritative read (deleteArticle's
+ * own lookup inside the lock is what actually decides what gets
+ * deleted), so a delete racing with this check is still safe: the core
+ * function's own re-read after acquiring the lock is what's trusted.
  */
 function deleteArticleForRole(spreadsheet, lock, role, requestingUserId, articleId, drive) {
-  if (!gateByRoleFor_(role, ['user', 'admin'])) {
-    return { success: false, error: '權限不足' };
+  if (role !== 'admin') {
+    if (!getRolePermissionsFor_(spreadsheet, role).articleManageOwn) {
+      return { success: false, error: '權限不足' };
+    }
+    var found = findArticleRowAndAuthor_(spreadsheet.getSheetByName('Articles'), articleId);
+    if (!found) {
+      return { success: false, error: '文章不存在' };
+    }
+    if (!boardAllowsRoleByIdFor_(spreadsheet, found.boardId, role)) {
+      return { success: false, error: '權限不足' };
+    }
   }
   return deleteArticle(spreadsheet, lock, requestingUserId, articleId, role === 'admin', drive);
 }

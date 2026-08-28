@@ -170,3 +170,69 @@ test('getUserRecord_ reads a populated lastSeenBoards JSON blob as-is (parsing i
 
   expect(record.lastSeenBoards).toBe('{"gossip":"2026/08/05 10:00:00"}');
 });
+
+// ---- 登入權限（權限系統 ticket 09）----
+
+test('login is rejected with the exact same error as a wrong password when the role\'s login permission is false, and does not increment the failure-lockout count', () => {
+  const ss = createFakeSpreadsheet();
+  seedUser(ss);
+  ss.getSheetByName('Users').getRange(2, 4, 1, 1).setValues([['blocked-role']]);
+  ss.getSheetByName('Permission').appendRow(
+    ['blocked-role', false, false, false, false, false, false, false, false]
+  );
+  const cache = createFakeCache();
+
+  const result = login(ss, cache, function () { return 'fixed-token-123'; }, fakeDigest, '2026/08/05 09:00:00', {
+    userId: 'alice01',
+    password: 'password123'
+  });
+
+  expect(result).toEqual({ success: false, error: 'userId 或密碼錯誤' });
+  expect(cache.get('loginFail_alice01')).toBeNull();
+});
+
+test('login rejected by role permission does not write loginCount/lastLoginAt or issue a token', () => {
+  const ss = createFakeSpreadsheet();
+  seedUser(ss);
+  ss.getSheetByName('Users').getRange(2, 4, 1, 1).setValues([['blocked-role']]);
+  ss.getSheetByName('Permission').appendRow(
+    ['blocked-role', false, false, false, false, false, false, false, false]
+  );
+  const cache = createFakeCache();
+
+  login(ss, cache, function () { return 'fixed-token-123'; }, fakeDigest, '2026/08/05 09:00:00', {
+    userId: 'alice01',
+    password: 'password123'
+  });
+
+  const record = getUserRecord_(ss.getSheetByName('Users'), 'alice01');
+  expect(record.loginCount).toBe(0);
+  expect(record.lastLoginAt).toBe('');
+});
+
+test('login succeeds normally for newbie/user/admin, whose login permission defaults to TRUE — existing behavior unchanged', () => {
+  const ss = createFakeSpreadsheet();
+  seedUser(ss); // registerUser defaults to role 'newbie'
+  const cache = createFakeCache();
+
+  const result = login(ss, cache, function () { return 'fixed-token-123'; }, fakeDigest, '2026/08/05 09:00:00', {
+    userId: 'alice01',
+    password: 'password123'
+  });
+
+  expect(result.success).toBe(true);
+});
+
+test('login is rejected the same way for a role that doesn\'t exist in the Permission sheet at all (e.g. a typo or a removed role) — fails safe, not open', () => {
+  const ss = createFakeSpreadsheet();
+  seedUser(ss);
+  ss.getSheetByName('Users').getRange(2, 4, 1, 1).setValues([['not-a-real-role']]);
+  const cache = createFakeCache();
+
+  const result = login(ss, cache, function () { return 'fixed-token-123'; }, fakeDigest, '2026/08/05 09:00:00', {
+    userId: 'alice01',
+    password: 'password123'
+  });
+
+  expect(result).toEqual({ success: false, error: 'userId 或密碼錯誤' });
+});

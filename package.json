@@ -1,0 +1,14 @@
+{
+  "name": "gas-bbs",
+  "version": "0.0.1",
+  "private": true,
+  "description": "一個完全建構在 Google Apps Script + Google Sheets 上的電子佈告欄（BBS）系統，含角色權限系統與 LINE 群組對話彙整機器人。",
+  "license": "UNLICENSED",
+  "type": "commonjs",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.10"
+  }
+}
