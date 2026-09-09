@@ -16,6 +16,11 @@ var _permissionsModule = (typeof require !== 'undefined') ? require('./permissio
 var _postArticleModule = (typeof require !== 'undefined') ? require('./postArticle') : null;
 var _userStatsModule = (typeof require !== 'undefined') ? require('./userStats') : null;
 var _boardsModule = (typeof require !== 'undefined') ? require('./boards') : null;
+var _mentionsModule = (typeof require !== 'undefined') ? require('./mentions') : null;
+
+function recordMentionsForContentFor_(spreadsheet, lock, params) {
+  return (_mentionsModule ? _mentionsModule.recordMentionsForContent_ : recordMentionsForContent_)(spreadsheet, lock, params);
+}
 
 function getRolePermissionsFor_(spreadsheet, role) {
   return (_permissionsModule ? _permissionsModule.getRolePermissions : getRolePermissions)(spreadsheet, role);
@@ -38,10 +43,13 @@ function escapeFormulaInjectionFor_(value) {
 }
 
 /**
- * Finds an article's row number, boardId, and current replyCount in a
- * single read of columns A:I, skipping the header row. Returns null if
- * articleId isn't found. Used by both createReply (row + replyCount)
- * and createReplyForRole (also needs boardId for the AllowRoles gate).
+ * Finds an article's row number, boardId, title, and current replyCount in
+ * a single read of columns A:I, skipping the header row. Returns null if
+ * articleId isn't found. Used by both createReply (row + replyCount) and
+ * createReplyForRole (also needs boardId for the AllowRoles gate, and
+ * title for the @提及輪 ticket 05 mention notification's article-title
+ * field — title was already sitting in this same read, just not exposed
+ * until now).
  */
 function findArticleInfoForReply_(sheet, articleId) {
   var lastRow = sheet.getLastRow();
@@ -51,7 +59,7 @@ function findArticleInfoForReply_(sheet, articleId) {
   var rows = sheet.getRange(2, 1, lastRow - 1, 9).getValues();
   for (var i = 0; i < rows.length; i++) {
     if (rows[i][0] === articleId) {
-      return { row: i + 2, boardId: rows[i][1], replyCount: rows[i][8] };
+      return { row: i + 2, boardId: rows[i][1], title: rows[i][2], replyCount: rows[i][8] };
     }
   }
   return null;
@@ -131,20 +139,39 @@ function createReplyForRole(spreadsheet, lock, role, input) {
     return { success: false, error: contentCheck.error };
   }
 
+  // @提及輪 ticket 05：result／articleInfo 提到 try 區塊外面宣告，區塊內
+  // 一律「賦值後 fall through」而不是 return——這樣鎖一定會走到下面的
+  // finally 釋放掉，再往下才呼叫 recordMentionsForContentFor_（它自己會
+  // 再取一次同一個 lock）。改成巢狀在 try 裡面呼叫的話，鎖還沒放掉就再要
+  // 一次同一把 script lock，GAS 的 lock 不是可重入鎖，會直接卡死到逾時。
+  var result;
+  var articleInfo = null;
   lock.waitLock(10000);
   try {
     var articlesSheet = spreadsheet.getSheetByName('Articles');
-    var articleInfo = findArticleInfoForReply_(articlesSheet, input.articleId);
+    articleInfo = findArticleInfoForReply_(articlesSheet, input.articleId);
     if (articleInfo === null) {
-      return { success: false, error: '文章不存在' };
+      result = { success: false, error: '文章不存在' };
+    } else if (!boardAllowsRoleByIdFor_(spreadsheet, articleInfo.boardId, role)) {
+      result = { success: false, error: '權限不足' };
+    } else {
+      result = writeReplyAtRow_(spreadsheet, articlesSheet, articleInfo, input);
     }
-    if (!boardAllowsRoleByIdFor_(spreadsheet, articleInfo.boardId, role)) {
-      return { success: false, error: '權限不足' };
-    }
-    return writeReplyAtRow_(spreadsheet, articlesSheet, articleInfo, input);
   } finally {
     lock.releaseLock();
   }
+
+  if (result.success) {
+    recordMentionsForContentFor_(spreadsheet, lock, {
+      text: input.content,
+      mentionedBy: input.author,
+      boardId: articleInfo.boardId,
+      articleId: input.articleId,
+      articleTitle: articleInfo.title,
+      timestamp: input.createdAt
+    });
+  }
+  return result;
 }
 
 if (typeof module !== 'undefined' && module.exports) {

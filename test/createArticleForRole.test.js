@@ -77,3 +77,54 @@ test('createArticleForRole ignores AllowRoles entirely for admin', () => {
   expect(result).toEqual({ success: true });
   expect(ss.getSheetByName('Articles').getLastRow()).toBe(2);
 });
+
+// ---- @提及輪 ticket 05 ----
+
+function seedUser(ss, row) {
+  ss.getSheetByName('Users').appendRow(row);
+}
+
+function getPendingMentions(ss, userId) {
+  const rows = ss.getSheetByName('Users').getRange(2, 1, ss.getSheetByName('Users').getLastRow() - 1, 11).getValues();
+  const row = rows.find(r => r[0] === userId);
+  return row ? JSON.parse(row[10] || '[]') : null;
+}
+
+test('a valid @mention in the article content notifies the mentioned user after the article is successfully created', () => {
+  const ss = createFakeSpreadsheet();
+  ensureSchema(ss);
+  seedBoard(ss, ['gossip', '八卦板', '閒聊', 1, '', '', 'ALL']);
+  seedUser(ss, ['bob0002', 'h', 's', 'user', "'2026/07/01 00:00:00", 0, '', 0, 0, '', '']);
+  const lock = createFakeLock();
+
+  createArticleForRole(ss, lock, 'user', makeInput({ content: '@bob0002 快來看' }));
+
+  const pending = getPendingMentions(ss, 'bob0002');
+  expect(pending).toHaveLength(1);
+  expect(pending[0].articleId).toBe('a1');
+  expect(pending[0].mentionedBy).toBe('alice01');
+});
+
+test('a mention in the article title (not just content) also notifies the mentioned user', () => {
+  const ss = createFakeSpreadsheet();
+  ensureSchema(ss);
+  seedBoard(ss, ['gossip', '八卦板', '閒聊', 1, '', '', 'ALL']);
+  seedUser(ss, ['bob0002', 'h', 's', 'user', "'2026/07/01 00:00:00", 0, '', 0, 0, '', '']);
+  const lock = createFakeLock();
+
+  createArticleForRole(ss, lock, 'user', makeInput({ title: '@bob0002 你看這個' }));
+
+  expect(getPendingMentions(ss, 'bob0002')).toHaveLength(1);
+});
+
+test('when createArticleForRole is rejected (e.g. no permission), no mention is recorded even if the content has a valid @mention', () => {
+  const ss = createFakeSpreadsheet();
+  ensureSchema(ss);
+  seedBoard(ss, ['gossip', '八卦板', '閒聊', 1, '', '', 'ALL']);
+  seedUser(ss, ['bob0002', 'h', 's', 'user', "'2026/07/01 00:00:00", 0, '', 0, 0, '', '']);
+  const lock = createFakeLock();
+
+  createArticleForRole(ss, lock, 'newbie', makeInput({ content: '@bob0002 快來看' }));
+
+  expect(getPendingMentions(ss, 'bob0002')).toEqual([]);
+});

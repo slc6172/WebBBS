@@ -7,7 +7,7 @@ test('ensureSchema creates all four sheets with the correct header rows', () => 
   ensureSchema(ss);
 
   const headers = {
-    Users: ss.getSheetByName('Users').getRange(1, 1, 1, 10).getValues()[0],
+    Users: ss.getSheetByName('Users').getRange(1, 1, 1, 11).getValues()[0],
     Boards: ss.getSheetByName('Boards').getRange(1, 1, 1, 7).getValues()[0],
     Articles: ss.getSheetByName('Articles').getRange(1, 1, 1, 10).getValues()[0],
     Replies: ss.getSheetByName('Replies').getRange(1, 1, 1, 5).getValues()[0],
@@ -15,7 +15,7 @@ test('ensureSchema creates all four sheets with the correct header rows', () => 
   };
 
   expect(headers).toEqual({
-    Users: ['userId', 'passwordHash', 'salt', 'role', 'createdAt', 'loginCount', 'lastLoginAt', 'articleCount', 'replyCount', 'lastSeenBoards'],
+    Users: ['userId', 'passwordHash', 'salt', 'role', 'createdAt', 'loginCount', 'lastLoginAt', 'articleCount', 'replyCount', 'lastSeenBoards', 'pendingMentions'],
     Boards: ['boardId', 'boardName', 'description', 'sortOrder', 'latestArticleAt', 'latestReplyAt', 'AllowRoles'],
     Articles: ['articleId', 'boardId', 'title', 'author', 'content', 'createdAt', 'editedAt', 'editedBy', 'replyCount', 'imageUrls'],
     Replies: ['replyId', 'articleId', 'author', 'content', 'createdAt'],

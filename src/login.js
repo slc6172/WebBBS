@@ -44,13 +44,15 @@ var SESSION_TTL_SECONDS = 21600; // 6 hours — also CacheService's own max TTL
  * 看板新內容提示功能：也讀出 lastSeenBoards（第 10 欄，JSON 字串原樣讀出，
  * 空字串代表「從沒進去過任何看板」，解析成物件是 boardActivity.js 的工作，
  * 不是這裡）。
+ * @提及輪 ticket 05：也讀出 pendingMentions（第 11 欄，JSON 字串原樣讀出，
+ * 空字串代表「目前沒有任何待通知的提及」，解析是 mentions.js 的工作）。
  */
 function getUserRecord_(sheet, userId) {
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) {
     return null;
   }
-  var rows = sheet.getRange(2, 1, lastRow - 1, 10).getValues();
+  var rows = sheet.getRange(2, 1, lastRow - 1, 11).getValues();
   for (var i = 0; i < rows.length; i++) {
     if (rows[i][0] === userId) {
       return {
@@ -62,6 +64,7 @@ function getUserRecord_(sheet, userId) {
         loginCount: rows[i][5] || 0,
         lastLoginAt: rows[i][6] || '',
         lastSeenBoards: rows[i][9] || '',
+        pendingMentions: rows[i][10] || '',
         row_: i + 2
       };
     }
@@ -149,6 +152,26 @@ function login(spreadsheet, cache, tokenGenerator, digestFn, nowTimestamp, input
   // 極端併發下少算一次也只是小小的顯示誤差（見 spec 的取捨說明）。
   sheet.getRange(record.row_, 6, 1, 2).setValues([[newLoginCount, "'" + nowTimestamp]]);
 
+  // @提及輪 ticket 06：登入成功時把 pendingMentions 清空——不管使用者接下來
+  // 有沒有真的點開來看，這份清單只顯示這一次。維持跟上面登入統計那次寫入
+  // 完全分開、範圍只到第 11 欄的獨立 setValues，不合併成一次大範圍寫入去
+  // 動到 lastSeenBoards/articleCount/replyCount 這些沒有真的變動的欄位。
+  //
+  // 這裡故意不 require mentions.js 來重用它的 getPendingMentions_——
+  // mentions.js 已經 require 這個檔案（拿 getUserRecord_），反過來再
+  // require 回去會形成循環 require，跟這個檔案上面 roleAllowsLogin_ 的
+  // 註解、以及 ticket 05 處理 escapeFormulaInjection 時踩到的是同一個
+  // 陷阱。这裡直接放一份小小的本地解析（try/parse，失敗當空陣列），不去
+  // 動現有的 require 方向。
+  var pendingMentions = [];
+  try {
+    var parsed = JSON.parse(record.pendingMentions || '[]');
+    pendingMentions = Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    pendingMentions = [];
+  }
+  sheet.getRange(record.row_, 11, 1, 1).setValues([['[]']]);
+
   var token = tokenGenerator();
   cache.remove(failKey);
   cache.put(SESSION_PREFIX + token, input.userId, SESSION_TTL_SECONDS);
@@ -156,7 +179,8 @@ function login(spreadsheet, cache, tokenGenerator, digestFn, nowTimestamp, input
     success: true,
     token: token,
     loginCount: newLoginCount,
-    lastLoginAt: previousLastLoginAt
+    lastLoginAt: previousLastLoginAt,
+    pendingMentions: pendingMentions
   };
 }
 

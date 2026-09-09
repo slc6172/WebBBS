@@ -5,6 +5,11 @@ var _permissionsModule = (typeof require !== 'undefined') ? require('./permissio
 var _userStatsModule = (typeof require !== 'undefined') ? require('./userStats') : null;
 var _boardsModule = (typeof require !== 'undefined') ? require('./boards') : null;
 var _imageStorageModule = (typeof require !== 'undefined') ? require('./imageStorage') : null;
+var _mentionsModule = (typeof require !== 'undefined') ? require('./mentions') : null;
+
+function recordMentionsForContentFor_(spreadsheet, lock, params) {
+  return (_mentionsModule ? _mentionsModule.recordMentionsForContent_ : recordMentionsForContent_)(spreadsheet, lock, params);
+}
 
 // 圖片張數突破：跟 imageStorage.js 的 resolveImageSlots 共用同一個上限
 // 常數，避免兩處各寫一次容易兜不起來。故意用函式在呼叫當下才讀取，不用
@@ -154,6 +159,13 @@ function createArticle(spreadsheet, lock, input) {
  * must allow it (admin bypasses AllowRoles entirely); anyone else is
  * rejected before any validation or write happens.
  */
+/**
+ * @param {Spreadsheet} spreadsheet
+ * @param {Lock} lock
+ * @param {string} role
+ * @param {{articleId: string, boardId: string, title: string, content: string, author: string, createdAt: string}} input
+ * @returns {{success: boolean, error?: string}}
+ */
 function createArticleForRole(spreadsheet, lock, role, input) {
   if (!getRolePermissionsFor_(spreadsheet, role).articlePost) {
     return { success: false, error: '權限不足' };
@@ -161,7 +173,23 @@ function createArticleForRole(spreadsheet, lock, role, input) {
   if (!boardAllowsRoleByIdFor_(spreadsheet, input.boardId, role)) {
     return { success: false, error: '權限不足' };
   }
-  return createArticle(spreadsheet, lock, input);
+  var result = createArticle(spreadsheet, lock, input);
+  // @提及輪 ticket 05：createArticle 內部的 lock.waitLock()/releaseLock() 這
+  // 時候已經跑完、鎖已經釋放了（不是還握著），這裡才呼叫
+  // recordMentionsForContentFor_（它會自己再取一次同一個 lock）才不會巢狀
+  // 鎖死——GAS 的 script lock 不是可重入鎖，同一次執行裡鎖還沒放掉又再要
+  // 一次會直接卡到逾時。
+  if (result.success) {
+    recordMentionsForContentFor_(spreadsheet, lock, {
+      text: input.title + '\n' + input.content,
+      mentionedBy: input.author,
+      boardId: input.boardId,
+      articleId: input.articleId,
+      articleTitle: input.title,
+      timestamp: input.createdAt
+    });
+  }
+  return result;
 }
 
 if (typeof module !== 'undefined' && module.exports) {

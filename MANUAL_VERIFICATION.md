@@ -756,3 +756,281 @@ clasp login
 - [x] 觸發一次同時有文字訊息跟圖片訊息交錯（不是圖片全部集中在最前面或最後面）的彙整發文，確認圖片編號依然正確對應（不是不管訊息順序都從 1 開始重編，而是照圖片在文章裡實際出現的順序編號）
 
 `Code.js` 裡的 `doGet` 直接呼叫 `SpreadsheetApp.getActiveSpreadsheet()` 與 `HtmlService`,這兩個物件只存在於 Apps Script 執行環境中,在 Node.js 裡沒有對應實作、也無法用假物件模擬「部署後網址真的能打開」這件事本身。所以我們把可獨立驗證的邏輯(`ensureSchema`、`pingRoundTrip`、`parseBootstrapParams`)抽成純函式並用 TDD 寫了自動化測試(見 `test/`),`Code.js`/`Index.html`/`appsscript.json` 則是把這些函式接上真實 GAS API 的最小膠水層,只能靠上面這份 checklist 手動驗證。
+
+## [未讀/新回覆/滑動/排序/搜尋/提及輪] 驗收項目
+
+> 第八輪改動（見 `.scratch/gas-bbs-unread-search-mentions-ux/gas-bbs-unread-search-mentions-ux-spec.md`），走完整 `grill-me`→`to-spec`→`to-tickets`→`tdd` 流程訪談出來，拆成 6 張票，編號重新從 01 起算，跟前面幾輪的編號是獨立系統。**6 張票全部完成。**
+
+### [未讀/新回覆/滑動/排序/搜尋/提及輪] Ticket 01 — 未讀文章與新回覆徽章 驗收項目
+
+> 這張票原本評估是純 `Index.html`/`Code.js` glue、沒有 seam 可測，但跟使用者確認後決定破例把「套用時間戳算出每篇文章 isNew/hasNewReply」這段日期比對邏輯抽成新的純函式模組 `articleUnread.js`（`computeArticleUnreadFlags_`），這是這個專案第一次把原本會落在 `Index.html` 的比對邏輯改放到後端、變成可以 TDD 的 seam。8 個測試全綠（空字串 lastSeenAt 全部不標、文章比對、回覆比對、邊界相等不算新、`repliesByArticleId` 缺 key 的防呆、多篇文章互不影響、不修改原始輸入陣列）。為了不新增任何 Sheets 讀取，這段比對用的 `lastSeenAt` 是前端從 `getBoardsFromToken`（頁面載入時就讀過一次）拿到的既有值，當參數傳給 `getBoardBulkFromToken`，不是伺服器另外查表取得——`getBoardBulkFromToken` 因此多了第 5 個參數 `lastSeenAt`，這是一個小小的介面變動，不影響既有呼叫端以外的任何東西。徽章的渲染、點開即消失（`locallyReadArticleIds_`，純瀏覽器記憶體）是純前端邏輯，沒有對應 seam，只能人工驗收。
+
+- [x] 用一個帳號登入，進入一個以前來過、而且上次來訪之後有新文章的看板，確認新文章標題前面出現紅底「N」小徽章，字級縮小但清晰可辨、沒有把標題擠壓到換行
+- [x] 確認上次來訪之前就存在、這次也沒有新回覆的文章，完全沒有任何徽章
+- [x] 找一篇「已經存在、上次來訪之前就發布」但這次有新回覆的文章，確認回覆數（💬）前面出現同樣的紅底「N」徽章（例如「N💬12」），文章標題本身不出現徽章
+- [x] 確認同一篇文章不會同時在標題跟回覆數兩個地方都出現徽章（新文章只標題章、有新回覆只回覆數旁章，兩者互斥）
+- [x] 用一個全新帳號（或清空某個看板的 `lastSeenBoards` 紀錄，模擬「這個帳號從沒進過這個看板」）第一次進入一個有存量文章的看板，確認完全沒有任何未讀/新回覆徽章出現，不會整片洗版
+- [x] 點開一篇有「N」徽章的文章，確認徽章立刻消失（不用重新整理頁面）；切到別篇文章再切回來，確認徽章維持消失（這個 session 內不會再出現）
+- [x] 重新整理整個頁面（或關掉分頁重開），回到同一個看板，確認剛剛點開過的文章這次不會再顯示徽章（因為 `lastSeenBoards` 已經在進板時更新過，這是預期行為，不是 bug）
+- [x] 開瀏覽器開發者工具的 Network（或 Console log `getBoardBulkFromToken` 的呼叫參數），確認呼叫時有帶上 `lastSeenAt` 這個參數、值是一個時間戳字串（或空字串），不是 `undefined`
+- [x] 用「跳頁」功能跳到某個舊頁次，確認該頁的文章也正確套用未讀/新回覆判斷（不會因為是跳頁載入的頁次就被漏掉）
+- [x] 用「載入更早的文章」按鈕載入下一批，確認新載入的這批文章同樣正確套用未讀/新回覆判斷
+- [x] 對同一個看板連續進兩次（第一次進、切到別的看板、再切回來），確認第二次因為版本沒變走 `unchanged` 快速路徑時，畫面沿用第一次已經算好、且可能已經被本地點開消除過的徽章狀態，不會因為第二次沒有重新計算就整批消失或整批重新出現
+- [x] `npm test` 全綠，確認 `test/articleUnread.test.js` 的 8 個測試都在裡面
+
+### [未讀/新回覆/滑動/搜尋/提及輪] Ticket 02 — 手機燈箱滑動切圖 驗收項目
+
+> 純 `Index.html` 前端手勢邏輯，沒有對應的 Node 測試 seam（跟自己的票券描述評估一致，跟 ticket 01 不同，這裡沒有值得抽出來的新邏輯——重用的是既有手機文章滑動已經在用、本來就沒測的同一套門檻常數）。實作時把 `EDGE_IGNORE_PX`/`SWIPE_MIN_DELTA_X`/`SWIPE_MAX_OFF_AXIS_RATIO` 三個常數從原本文章滑動的 IIFE 內部提到外層共用，兩處滑動手感保證一致。燈箱背景原本的 `onclick="closeLightbox()"` 改成 JS 監聽器裡統一判斷（先看是不是剛滑動完，是的話略過這次、否則正常關閉），避免滑動後瀏覽器補發的合成 click 事件誤觸發背景關閉；這個判斷刻意寫在單一個 handler 裡，不是靠 capture/bubble 事件流順序去猜，理由見程式碼註解。
+
+- [x] 手機（或縮小視窗模擬手機版寬度）點開一篇有多張圖片（例如 5 張）的文章，點任一縮圖開燈箱，用手指左滑，確認切換到下一張圖片
+- [x] 右滑，確認切回上一張圖片，方向跟桌面鍵盤 ←/→ 一致
+- [x] 滑到第一張時再右滑，確認畫面停住不動（不會出錯、不會跳到最後一張）；滑到最後一張時左滑同樣停住不動
+- [x] 從螢幕最左緣一小段範圍內開始滑動，確認不會誤觸切圖（保留給 iOS 系統返回手勢）
+- [x] 做一次明確的左右滑動手勢（位移超過門檻），確認滑動完成後**不會**同時把燈箱背景關掉（滑動不應該被誤判成點擊背景）
+- [x] 在燈箱背景空白處（不是圖片、不是 ✕ 按鈕）做一次單純的點擊（不是滑動），確認燈箱正常關閉，沒有因為這次改動而失效
+- [x] 點 ✕ 按鈕，確認燈箱正常關閉，行為跟改動前一致
+- [x] 按 Esc（如果測試裝置有實體/外接鍵盤），確認依然能正常關閉燈箱，不受這次改動影響
+- [x] 點開一篇只有 1 張圖片的文章，開燈箱後左右滑動，確認沒有任何反應、不會出現錯誤（開發者工具 Console 沒有紅字）
+- [x] 桌面寬螢幕版面（非手機模式）用滑鼠模擬觸控事件測試（或直接確認桌面版本來就不會收到 touch 事件），確認不影響桌面版既有的鍵盤左右鍵切圖
+- [x] `npm test` 全綠（這張票沒有新增任何 Node 測試，確認既有 397 個測試沒有因為這次 `Index.html` 改動而受影響——雖然 `Index.html` 本來就不在 Node 測試涵蓋範圍內，這裡純粹是重申「本地跑過一次確認沒有連帶弄壞其他東西」的習慣）
+
+### [未讀/新回覆/滑動/搜尋/提及輪] Ticket 03 — 圖片排序按鈕（三表單） 驗收項目
+
+> 這張票原本也想比照 ticket 01 抽成獨立純函式測，寫完測試才發現一個跟 ticket 01 不一樣的關鍵差異：排序這個互動完全是瀏覽器端操作（還沒上傳的圖片，不會有伺服器往返），而 `src/*.js` 是 GAS **伺服器端**執行環境，`Index.html` 的 `<script>` 是瀏覽器執行的獨立環境，兩者互相看不到彼此——`src/imageReorder.js` 就算寫了測試、clasp push 上去也只是一份沒人會真的呼叫到的伺服器端死程式碼。查證過 GAS 官方文件：`HtmlService` 的 `include()` 只能注入 `.html` 類型的檔案內容，讀不到 `.js`/`.gs` 檔案，這條路對這個專案目前的架構走不通（要走通得新增一個這個專案從沒用過的樣板 include 機制，風險跟複雜度都不成比例）。跟使用者確認後，維持原始評估：純 `Index.html` 前端邏輯，沒有 Node 測試 seam；抽出來測那一輪(已刪除)幫忙把邊界情況（移到最前/最後不動、不修改原陣列等）想清楚了，這輪直接把同一套邊界判斷寫進 `moveImageInList_`（`Index.html` 內部函式，跟 `removeXxxImage` 一樣用陣列原地修改、不是回傳新陣列）。
+
+- [x] 桌面發文表單，選 4 張以上圖片，點某張圖片的「▶」，確認它跟後一張圖片互換位置，其餘圖片順序不變
+- [x] 同一個表單點「◀」，確認跟前一張互換，行為對稱
+- [x] 第一張圖片的「◀」按鈕呈現停用（變灰、點了沒反應），最後一張的「▶」按鈕同樣停用
+- [x] 手機發文表單（全螢幕頁）重複上面三項，確認行為跟桌面完全一致
+- [x] 編輯既有文章時，圖片清單同樣有排序按鈕，重複上面三項，確認行為一致
+- [x] 在編輯文章時調整順序後儲存，重新整理頁面或重新點開這篇文章，確認圖片顯示順序真的反映了調整後的順序（不是只有表單內暫時排序，送出後有真的生效）
+- [x] 新發表一篇文章時先調整順序再送出，確認發表後的文章圖片順序符合調整後的結果
+- [x] 選很多張圖片（例如 15～20 張）撐滿一整排、每個縮圖格變得很窄時，確認排序按鈕沒有被截斷看不到、也沒有跟移除按鈕擠在一起分不清楚（允許換行到第二排是預期行為）
+- [x] 只選 1 張圖片時，確認「◀」「▶」都是停用狀態（沒有東西可以交換）
+- [x] 開發者工具 Console 操作過程中沒有出現任何紅字錯誤
+- [x] `npm test` 全綠（這張票沒有新增 Node 測試，理由見上面的說明；確認既有 397 個測試沒有受影響）
+
+### [未讀/新回覆/滑動/搜尋/提及輪] Ticket 05 — @提及偵測與寫入 驗收項目
+
+> 這張票是這輪最大的一張，過程中抓到兩個原本沒預期到的架構問題，都在動手前/動手中發現並修正，不是留到部署後才爆炸：
+> 1. **鎖巢狀死鎖風險**：`createArticleForRole`/`createReplyForRole` 本來就用 `LockService` 包住自己的寫入critical section。如果提及的掃描/寫入邏輯在這個鎖**還沒放掉**的情況下再取一次鎖，GAS 的 script lock 不是可重入鎖，會直接卡死到逾時。解法：兩個函式改成先讓自己的鎖正常 acquire/release 完，`recordMentionsForContentFor_`（會自己再取一次同一把鎖）在鎖已經放掉之後才呼叫。`createReplyForRole` 原本在 `try` 區塊裡有好幾個提早 `return`，為了讓「鎖放掉之後還有機會執行提及邏輯」，改寫成統一賦值給 `result` 變數、區塊結束後單一個 `return`——這段改寫做完後有重新跑過該檔案原本所有既有測試，全部維持通過（含專門保護「Articles 表最多讀一次」這條效能承諾的測試）。
+> 2. **循環 require**：一開始想讓 `mentions.js` 直接 `require('./postArticle')` 重用它的 `escapeFormulaInjection`，但 `postArticle.js` 已經反過來 require `mentions.js`（拿 `recordMentionsForContent_`），兩個檔案互相 require 會讓其中一個檔案先載入的那次，另一邊拿到還沒填好的空 `module.exports`——這個問題不會在 require 當下報錯，只會在真正呼叫到那個函式時才炸開（`TypeError: ... is not a function`），而且哪邊先載入取決於是哪個測試檔先跑，同一份程式碼在不同測試組合下可能一次炸一次不炸。這正好是 `login.js` 裡處理 `getSessionRole`/`permissions.js` 那對循環依賴時，已經寫在註解裡說明過的同一類陷阱——照那裡建立的先例，`escapeFormulaInjection`（5 行、純函式）在 `mentions.js` 裡放一份小小的本地複本，不去動 `postArticle.js`→`mentions.js` 這條已經在運作的 require 方向。這個 bug 一度真的讓 `createArticleForRole.test.js`/`createReplyForRole.test.js` 炸掉，修正後重新確認兩個 require 方向（測試檔先 require `mentions.js` vs 先 require `postArticle.js`）都正常。
+>
+> 另外實作時額外補了一個 spec 沒寫的東西：`articleTitle` 存進 `pendingMentions` 前套用 `escapeFormulaInjection`（跟 `postArticle.js` 對 title/content/imageUrls 的縱深防禦原則一致），原本 spec 裡寫「整欄值開頭固定是 `[`，不需要跳脫」——這個判斷本身沒錯（不會被誤判成公式），但沒對齊這個專案「即使技術上不必要也要縱深防禦」的既有慣例（image URL 陣列就是先例），發現後補上了。
+>
+> Node 測試：`mentions.js` 22 個測試（擷取/解析/附加/組裝/整合函式的存在性-權限-自我排除-併發鎖）、`schema.test.js`／`login.test.js` 各延伸驗證新的第 11 欄、`createArticleForRole.test.js`/`createReplyForRole.test.js` 各延伸 3 個測試驗證接線正確、拒絕時不通知、Articles 表讀取次數不受影響。全部 30 個新增測試（427 − 397）都綠。
+
+- [x] 用帳號 A 發一篇文章，內文包含 `@` + 一個真實存在、對這個看板有讀取權限的帳號 B 的 userId，之後用帳號 B 登入（這張票還沒做登入顯示，登入後畫面不會有變化——下一張票 06 才會顯示，這裡先只能靠檢查試算表確認 `pendingMentions` 欄位有沒有正確寫入）
+- [x] 同上，改成在**回覆**裡 @ 提及，確認一樣正確寫入，而且記錄的文章標題是回覆所屬的那篇文章的標題（不是回覆內容本身）
+- [x] @ 一個不存在的 userId，確認不會報錯、文章/回覆正常送出成功，沒有任何人被通知
+- [x] @ 自己（發文者/回覆者本人的 userId），確認不會通知自己
+- [x] @ 一個真實存在、但角色對這個看板沒有讀取權限的使用者（例如看板 AllowRoles 只開放特定角色），確認不會通知
+- [x] @ 一個真實存在、角色全域沒有 articleRead 權限的使用者（例如 newbie），確認不會通知
+- [x] 一篇文章/回覆同時 @ 兩個以上的有效對象，確認每個人各自收到各自的一筆記錄，不會漏掉也不會錯發給別人
+- [x] 找一個已經有舊的 `pendingMentions` 記錄的帳號，再對他發一次新的有效提及，確認新記錄是附加進去、沒有把舊記錄洗掉
+- [x] 標題或內文裡包含類似 `=cmd|...` 這種以 `=`/`+`/`-`/`@` 開頭的文字剛好又符合 userId 格式被有效提及到，用試算表 UI 直接打開該儲存格檢查，確認 `articleTitle` 欄位有被加上跳脫前綴（`'`開頭），不會被 Sheets 誤判成公式
+- [x] 編輯一篇既有文章，把內文改成新增一個有效的 `@提及`，確認**不會**觸發通知（這輪範圍明確排除編輯時的提及偵測）
+- [x] `npm test` 全綠，確認 427 個測試都在（比 ticket 03 完成時的 397 多 30 個）
+
+### [未讀/新回覆/滑動/搜尋/提及輪] Ticket 04 — 看板內搜尋 驗收項目
+
+> 跟 ticket 03 一樣的架構限制，沿用同一個結論不再重問：比對的是 `boardBulkCache`（純瀏覽器端狀態）,GAS 伺服器端的 `src/*.js` 看不到這份資料，硬要抽成 `.js` 檔案送測只會變成一份沒人真正在跑的死程式碼。純 `Index.html` 前端邏輯，沒有 Node 測試 seam，靠人工驗收。
+>
+> 實作時把 `renderArticleListFromCache` 裡「把文章陣列畫成 DOM 項目」那段抽成共用函式 `renderArticleItemsIntoList_`，一般列表跟搜尋結果都呼叫它——確保未讀徽章、目前選取反藍、點擊開文章這幾件事兩種檢視模式行為完全一致，不會各自維護一份之後跑掉。新增 `currentBoardRepliesFlat_` 比照既有 `currentBoardArticlesFlat_` 的模式，把已載入各頁的 `repliesByArticleId` 合併成一份。搜尋狀態（`isSearching_`）的清除集中在 `renderArticleListFromCache` 開頭做，任何操作只要最終呼叫到這個函式，畫面跟底層狀態就保證同步，不用在每個會離開搜尋模式的地方各自記得清。比對規則跟提及輪 ticket 05 的偵測邏輯一致，走「不分大小寫、純子字串比對」，不做分詞或模糊比對。
+
+- [x] 進一個有多篇文章的看板，在搜尋框打一個只出現在**某篇文章標題**裡的關鍵字，按 Enter，確認只有那篇文章出現在結果裡
+- [x] 清空搜尋框內容、重新打一個只出現在**某篇文章內文**（不在標題）裡的關鍵字，確認搜得到
+- [x] 打一個只出現在**某則回覆內容**裡（不在任何文章標題/內文）的關鍵字，確認搜得到、而且點進去的是**回覆所屬的那篇文章**（不是回覆本身，文章本身可能標題完全對不上關鍵字）
+- [x] 點搜尋按鈕（不是按 Enter）觸發搜尋，確認一樣正常運作
+- [x] 確認打字過程中（還沒按 Enter/點按鈕）畫面不會有任何變動，不是邊打邊搜
+- [x] 打一個確定沒有任何文章符合的關鍵字，確認顯示「沒有符合的文章」而不是空白或報錯
+- [x] 搜尋結果畫面確認**看不到跳頁 bar**（跳頁 bar 應該被搜尋狀態列取代），跳頁 bar 原本顯示的看板文章總頁數判斷不會因為搜尋而跑掉
+- [x] 點「✕ 清除搜尋」，確認搜尋框清空、列表恢復成一般文章列表（含原本可能有的跳頁 bar）
+- [x] 找一個文章數多到會分批載入（`hasMore` 為 true）的看板，搜一個只存在於「還沒載入的更早文章」裡的關鍵字，確認一開始搜不到、但看得到「載入更早的文章再搜一次」的按鈕
+- [x] 點那顆按鈕，確認載入完成後**自動重新搜尋一次**（不用再按一次 Enter/搜尋鈕），而且這次搜得到
+- [x] 確認「載入更早的文章再搜一次」按鈕在載入中會顯示「載入中...」，跟一般列表模式的「載入更早的文章」按鈕視覺回饋一致
+- [x] 切換到另一個看板，確認上一個看板的搜尋關鍵字跟搜尋結果狀態都被清掉，不會殘留
+- [x] 用另一個帳號確認：在自己**沒有讀取權限**的看板，搜尋框本身要嘛不會出現、要嘛搜尋不到任何內容（看板選單本來就只列出有權限的看板，這裡只是確認沒有額外的方式繞過去看到別的看板內容）
+- [x] 開發者工具 Console 全程沒有紅字錯誤
+- [x] `npm test` 全綠（這張票沒有新增 Node 測試，理由見上面的說明；確認既有 427 個測試沒有受影響）
+
+### [未讀/新回覆/滑動/搜尋/提及輪] Ticket 06 — @提及登入清單顯示 驗收項目
+
+> `login()` 本身是既有測試過的函式，這張票延伸走 TDD；前端 modal 顯示/導覽是純 `Index.html` 邏輯，沒有 seam，靠人工驗收——跟這輪其他張票一路下來的分工方式一致。
+>
+> `login()` 的修改：密碼驗證＋角色登入權限都通過之後，讀出 `record.pendingMentions`（ticket 05 時 `getUserRecord_` 就已經讀進來了），解析成陣列放進回傳值；對第 11 欄做**獨立**一次 `setValues` 清空成 `'[]'`，跟原本第 6-7 欄（`loginCount`/`lastLoginAt`）那次寫入完全分開，不合併成一次大範圍寫入去動到中間沒有真的變動的 `articleCount`/`replyCount`/`lastSeenBoards`。解析 `pendingMentions` 原始 JSON 字串這段，原本想直接重用 `mentions.js` 的 `getPendingMentions_`，但 `mentions.js` 已經 `require` 這個檔案（拿 `getUserRecord_`），反過來再 `require` 回去會形成循環 require——這正是 `login.js` 自己在 `roleAllowsLogin_` 附近的註解、以及 ticket 05 處理 `escapeFormulaInjection` 時已經踩過一次的同一個陷阱，這次直接沿用同一個解法（一份 5 行的本地小複本），沒有重蹈覆轍。
+>
+> 前端：`handleLogin` 收到 `res.pendingMentions` 先暫存到一個模組層級變數，**不**在登入成功當下立刻顯示 modal——因為顯示 modal 需要把 `boardId` 轉換成看板名稱（用 `allBoards`），而 `allBoards` 要等 `loadBoards()` 這個非同步呼叫真的回來才會填好。真正顯示的時機延後到 `loadBoards()` 成功回呼裡、`boardSelect` 下拉選單選項也渲染完成、目前看板文章也已經開始載入之後——這樣使用者點 modal 裡任一項要切換看板時，所有必要的前置狀態都已經穩定。點擊項目導覽到文章，重用既有的深連結開文章機制（`bootstrapData.articleId` + `openDeepLinkedArticleIfPending`），沒有另外寫一套切看板/開文章的邏輯。看板數為 0（一個看板都看不到）的極端情況下 modal 不會顯示——顯示了也點不進去，不顯示是更合理的行為，這點跟程式碼既有的提早 return 結構自然對齊，沒有額外處理。
+>
+> Node 測試延伸 `login.test.js` 7 個：回傳解析後的陣列（不是原始 JSON 字串）、沒有提及時回傳空陣列（不是 `undefined`）、成功登入後試算表上的值真的被清空、清空這次寫入不影響 `lastSeenBoards`/`articleCount`/`replyCount`、密碼錯誤/角色被擋這兩種登入失敗情境都不會清空、儲存格內容剛好不是合法 JSON 時當作沒有提及處理（不會噴錯讓整個登入失敗）。全部 7 個新增測試（434 − 427）都綠。
+
+- [x] 用試算表 UI 手動在某個帳號的 `pendingMentions` 欄位填一筆合法的 JSON（比照 ticket 05 寫入格式），用這個帳號登入，確認彈出「💬 有人提到你」的視窗，列出正確的文章標題／看板名稱／提及者／時間
+- [x] 點清單裡的一項，確認視窗關閉、畫面切到該看板、自動開啟該篇文章（不用再手動點一次）
+- [x] 重新登出、登入同一個帳號，確認**不會**再跳出同一份清單（已經清空過了）
+- [x] 一個帳號同時累積兩筆以上的提及記錄，登入後確認 modal 裡列出全部，不是只顯示最後一筆
+- [x] 登入一個完全沒有任何待處理提及的帳號，確認**不會**跳出任何視窗、畫面上也沒有殘留任何常駐圖示或角標
+- [x] 跳出 modal 後不點任何一項、直接按「✕」關閉，確認關閉後畫面正常，下次登入也不會重複跳出（清空是登入當下就做的，不是靠使用者點開才觸發）
+- [x] 點擊 modal 背景空白處（不是項目、不是 ✕），確認會關閉（沿用既有彈窗「點背景關閉」的慣例）
+- [x] 手動把某個帳號的 `pendingMentions` 欄位改成一段不合法的 JSON 文字，登入這個帳號，確認登入本身正常成功（不會因為這欄壞掉就整個登入失敗），且不會跳出任何提及視窗
+- [x] 用開發者工具 Network（或 log）確認登入回傳的 `pendingMentions` 欄位是陣列格式，不是字串（不用再額外 `JSON.parse` 一次）
+- [x] 開發者工具 Console 全程沒有紅字錯誤
+- [x] `npm test` 全綠，確認 434 個測試都在（比 ticket 04 完成時的 427 多 7 個）
+
+---
+
+## [未讀/新回覆/滑動/搜尋/提及輪] 全部完成
+
+第八輪 6 張票全部做完：01 未讀文章與新回覆徽章、02 手機燈箱滑動切圖、03 圖片排序按鈕、04 看板內搜尋、05 @提及偵測與寫入、06 @提及登入清單顯示。`npm test` 434 個測試全綠（比這輪開始前的 389 多 45 個）。詳細設計決策、過程中抓到的架構問題（GAS 伺服器/瀏覽器兩個執行環境互相看不到彼此、script lock 不可重入、循環 require）都記在各張票自己的驗收項目章節裡，不在這裡重複。
+
+---
+
+## [bug-fix 輪] 第八輪部署後回報的三個問題
+
+> 這輪是使用者實際部署、手動測試第八輪成果後回報的三個 bug，不是新功能，走的是交接文件裡寫的「不用走 grill-me 那套，直接評估附檔 → 套用 → 視情況用 tdd 補測試（有 seam 才補）→ 更新 MANUAL_VERIFICATION.md」流程（不過這次使用者仍然先手動打了 `/grill-me`，在動手前先對齊了三個技術決策，細節見對話紀錄，這裡只記結論）。
+
+### 1. `pendingMentions` 沒有數量上限
+
+長期不登入的帳號如果持續被 @提及，`pendingMentions` 這個 JSON 陣列會一直長大，理論上可能撞到 Sheets 單一儲存格 50,000 字元的上限。單筆 entry 最壞情況（userId 上限 20 字元、boardId 抓寬鬆 30 字元、articleId 是 36 字元的 UUID、articleTitle 上限 100 字元+跳脫、createdAt 時間戳 19 字元、JSON key/語法開銷）約 285 字元；比照原始 spec 裡 `content` 欄位「上限 10,000 字元，對照 50,000 上限留安全餘裕」的同一種安全邊際，選定 **50 筆**上限（`src/mentions.js` 的 `MAX_PENDING_MENTIONS`）。裁切邏輯放在 `appendPendingMention_`（有獨立單元測試覆蓋的既有函式）而不是呼叫端 `recordMentionsForContent_`，超過上限時悄悄捨棄最舊的一筆——不報錯、不通知任何人，跟這個模組其他地方「靜默略過」的既有慣例一致。既有帳號如果已經累積了超過上限的舊資料，不需要額外的遷移工具：`login()` 每次登入都會把這欄整個清空成 `'[]'`，跟目前陣列多長無關；真正需要裁切保護的是「後續append」這條路徑，這次修的正是這裡。
+
+Node 測試：`mentions.test.js` 新增 5 個（`MAX_PENDING_MENTIONS` 數值本身、剛好卡在上限前一筆不裁切、超過上限裁掉最舊一筆、反覆呼叫遠超過上限也不會無限長大、`recordMentionsForContent_` 整合層級確認「已經在上限的使用者收到新提及」一樣正確裁切）。全部 5 個新增測試（439 − 434）都綠。
+
+- [x] 手動把某個測試帳號的 `pendingMentions` 欄位塞進一段已經有 50 筆記錄的合法 JSON（可以用一小段 Apps Script 或試算表公式批次產生），對這個帳號送出一次新的有效 @提及，用試算表 UI 打開該儲存格，確認筆數還是 50 筆、最舊的一筆被換掉、新的一筆在最後面
+- [x] 用一個全新（`pendingMentions` 是空字串）的帳號，正常走 @提及流程一次，確認行為跟這輪修改前完全一樣（不影響低於上限時的既有行為）
+- [x] `npm test` 全綠，確認 439 個測試都在（比第八輪完成時的 434 多 5 個）
+
+### 2. 搜尋結果點進文章、清除搜尋回到總表時，沒有捲動到那篇文章的位置
+
+程式碼原本就有依 `currentArticleId` 幫符合的項目加上 `.active`（反藍）class 的邏輯（`renderArticleItemsIntoList_`），這條清除搜尋時一樣會跑到；真正缺的是捲動——列表重新渲染後，原本的捲動位置對這篇文章來說已經沒有意義，長列表裡即使反藍了也可能在可視範圍外，感覺上就像沒生效。純 `Index.html` 前端邏輯，沒有 seam，靠人工驗收，跟這輪其他純前端問題的分工方式一致。
+
+`clearSearch_()` 在呼叫 `renderArticleListFromCache` 重新渲染總表之後，額外找出 `#articleList` 裡帶 `.active` class 的項目（找不到就靜默略過，例如目前沒有任何開啟中的文章），呼叫 `scrollIntoView({ block: 'center' })` 捲到清單可視範圍正中間。刻意不沿用上下鍵導覽用的 `block: 'nearest'`（只在真的被裁到看不見時才捲）——這裡的情境是「整個列表剛重新渲染過，原本的捲動位置已經沒有意義」，直接捲到看得清楚的位置比較符合這個情境。
+
+- [x] 進一個文章數夠多、需要捲動才看得完的看板，搜尋一個關鍵字，點進其中一篇離目前捲動位置很遠的搜尋結果，開啟後點「✕ 清除搜尋」，確認：(a) 該篇文章在總表裡確實反藍，(b) 畫面自動捲動到那篇文章、不用自己再往下找
+- [x] 同上，但改成搜尋一篇**目前就在可視範圍附近**的文章，確認捲動後畫面沒有不必要的跳動或閃爍
+- [x] 手機版：搜尋 → 點開一篇搜尋結果（切到詳情畫面）→ 按返回鍵回到列表 → 點「✕ 清除搜尋」，確認一樣有反藍 + 捲動到正確位置
+- [x] 完全沒有開啟過任何文章、直接搜尋後點「✕ 清除搜尋」（`currentArticleId` 是空字串），確認不會有任何 JS 錯誤，列表正常顯示
+- [x] 開發者工具 Console 全程沒有紅字錯誤
+
+### 3. 手機版搜尋「找到 N 篇符合的文章」文字被兩顆按鈕擠壓，逐字換行
+
+根因：`.board-search-status-bar #searchResultCount` 有 `min-width: 0`（刻意允許被壓縮），但沒有 `white-space`/`overflow` 保護；手機版兩顆按鈕（尤其「載入更早的文章再搜一次」字很長）同時顯示時，可用寬度被壓到不到一個中文字寬，中文沒有天然斷行點，逐字換行、整條狀態列被撐得很高。純 CSS 問題，`@media (max-width: 767px)` 區塊裡新增：`.board-search-status-bar { flex-wrap: wrap; }`、`#searchResultCount { flex-basis: 100%; }`，讓文字獨立佔滿一整行（有足夠空間後照 CSS 預設換行，不會再逐字斷行），兩顆按鈕自然被推到下一行——按鈕本身沒有被設 `min-width:0`，不會有同樣的逐字斷行問題。跟專案既有處理同類「按鈕擠壓文字」問題的慣例一致（`.article-detail-card .header-title` 用 `column-reverse` 那次），但這裡 DOM 順序本來就是「文字在前、按鈕在後」，不需要額外調換視覺順序。
+
+- [x] 用瀏覽器開發者工具切到手機寬度（例如 375px、比 iPhone SE 更窄的 320px 都測一下），進一個文章數多到 `hasMore` 為 true 的看板，搜尋一個有結果的關鍵字，確認「找到 N 篇符合的文章」文字完整一行顯示，沒有逐字換行
+- [x] 同上情境，確認「載入更早的文章再搜一次」跟「✕ 清除搜尋」兩顆按鈕都在文字下方，按鈕文字本身也沒有被截斷或逐字換行
+- [x] 切回桌面寬度，確認搜尋狀態列的排版跟這次修改前完全一樣（這個修改只在 767px 以下的 media query 裡生效）
+- [x] 真實手機（不是模擬器）上重複第一項，確認實機顯示也正常
+- [x] 開發者工具 Console 全程沒有紅字錯誤
+
+---
+
+## [bug-fix 輪] 三項全部完成
+
+`npm test` 439 個測試全綠（比第八輪完成時的 434 多 5 個，全部來自 issue 1 的 `pendingMentions` 上限）。issue 2、3 是純 `Index.html` 前端修正，沒有新增 Node 測試；三項的人工驗收項目已經在真實 GAS 環境實際部署測試過，全部勾選 `[x]`。
+
+---
+
+## [bug-fix 輪 2] 送出回覆後，趁著還沒回應點開另一篇文章，回覆跑錯地方
+
+> 使用者回報：「在按下送出回覆，畫面還沒執行完畢，我就去點選另一篇文章。結果這個回覆就出現在這個另一篇文章了（假如沒有點選另一篇文章，而是待在原文章等，就沒這個問題）。當重新整理頁面後會發現，其實回覆有回到正確的文章」——使用者自己的診斷（「猜測應該是增量修改的部份有 bug，所以暫存的畫面有錯，但實際資料庫寫入是正確的」）跟實際查出來的根因完全一致。
+
+### 根因
+
+`handlePostReply()` 的 `google.script.run.withSuccessHandler` callback 裡，用來決定「這則回覆該套用到哪篇文章」的是全域變數 `currentArticleId`——但 callback 是在伺服器真正回應之後才執行，這段等待期間如果使用者點開了另一篇文章，`currentArticleId` 早就已經被 `selectArticle` 改成新文章的 id 了。等 callback 真正跑到的時候：
+
+- 實際送給伺服器的 RPC 呼叫（`postReplyFromForm(currentToken, currentArticleId, content)`）沒有問題——函式呼叫的參數是在呼叫當下（使用者點「送出」那一刻，還沒被使用者中途切換影響）就同步求值完畢，所以資料庫寫入一直是對的，這也是為什麼重新整理後看到的結果是正確的。
+- 但 callback 內部後續用來更新畫面／快取的 `patchArticleDetailOnReplyCreate(currentArticleId, ...)`，讀到的 `currentArticleId` 已經是使用者中途點開的**新**文章 id，於是這則回覆被錯誤地推進新文章在快取裡的回覆陣列，`renderArticleDetail(lastArticleDetail)` 再把這個（已經被污染的）快取渲染出來，看起來就像回覆長在新文章底下。重新整理頁面會把 `boardBulkCache` 整個從伺服器重新讀回來，錯誤污染的本地快取被丟棄，回覆自然顯示在真正正確的文章上。
+
+### 系統性排查：同一種寫法在其他 5 個地方也有一樣的問題
+
+順著這個根因往下查，發現「callback 裡讀取當下的 `currentArticleId`/`currentBoardId` 全域變數，而不是操作發起當下鎖定的目標」是同一種寫法在好幾個地方重複出現，不是只有回覆這一處，一併修掉：
+
+| 函式 | 沒鎖定會怎樣 |
+|---|---|
+| `handleDeleteReply` | 刪除回覆送出後切去別的文章，回覆數徽章可能套用到看板列表目前顯示的錯誤看板 |
+| `handlePostArticle` / `handleMobilePostArticle` | 發文（含圖片上傳，等待時間更長）送出後切去別的看板，新文章可能被塞進錯誤看板的本地快取、畫面上的文章列表也可能被硬換成原本那個看板的內容 |
+| `handleSaveEditArticle` | 儲存編輯送出後（一樣有圖片上傳的等待空檔）切去別的文章，編輯結果、甚至「結束編輯模式」這個畫面狀態，都可能被錯誤地套用回使用者已經切走的畫面上 |
+| `handleDeleteArticle` | 刪除文章的確認彈窗＋伺服器回應這兩段等待期間切去別的文章，右側面板可能被無端清空、手機版可能被強制退回列表畫面，即使使用者根本已經在看別的、沒被刪除的文章 |
+
+### 修法：捕捉當下值 + 套用畫面更新前重新比對
+
+不是逐一土法煉鋼修，而是先在 `findCachedArticleLocation_` 旁邊訂出兩個共用判斷式 `isViewingArticle_(articleId)`／`isViewingBoard_(boardId)`（比對「現在」的 `currentArticleId`/`currentBoardId` 是否還等於傳入值），確立一套所有 `google.script.run` 呼叫都要延續的原則（完整說明直接寫在程式碼註解裡，`README.md` 也加了對應的第四條工程原則，跟第五、七、八輪那三條同一個格式）：
+
+1. 呼叫 `google.script.run`（或任何非同步操作，含 `showConfirm` 這種還會再插一層確認彈窗的）之前，先把「這次操作對應哪個看板/哪篇文章」存進區域變數（`targetBoardId`/`targetArticleId`）。
+2. callback 裡「更新底層快取」的部分（`patchArticleDetailOnReplyCreate`/`patchArticleDetailOnReplyDelete`/`patchArticleDetailOnEdit`/`patchArticleListOnCreate`/`patchArticleListOnEdit`/`patchArticleListOnDelete`/`patchArticleListReplyCount`）一律用第 1 步存的區域變數，不管使用者是否已經切走都要更新正確——這樣使用者之後點回那篇文章/那個看板，看到的都已經是最新資料。
+3. callback 裡「更新看得到的畫面」的部分（右側詳情面板、左側文章列表 DOM、手機返回列表）一律先用 `isViewingArticle_`/`isViewingBoard_` 比對現在的全域變數是否還等於目標值，不同就靜默跳過畫面更新。
+
+連帶把 `patchArticleDetailOnReplyCreate`/`patchArticleDetailOnReplyDelete`/`patchArticleDetailOnEdit` 這三個共用函式本身也修了：原本內部直接讀 `currentBoardId` 全域變數、而且不管使用者現在是否還在看那篇文章，都會直接覆寫 `lastArticleDetail`（畫面實際渲染依據的那個變數）——這是造成污染最核心的一步。改成 `boardId` 一律當參數傳入（呼叫端負責傳對），回傳值也從 `true`/`false` 改成「更新後的 `{article, replies}`／`null`」，不在函式內部直接動 `lastArticleDetail`，是否要同步到畫面交給呼叫端自己用 `isViewingArticle_` 判斷。
+
+`patchArticleListReplyCount` 也是類似的部分修正：快取數字一律更新，但 `renderArticleListFromCache(boardId)` 這個會直接刷新畫面上文章列表 DOM 的動作，改成只在 `isViewingBoard_(boardId)` 為真時才做。
+
+這是純 `Index.html` 前端修正，沒有 seam、沒有新增 Node 測試（`npm test` 仍是 439 個測試全綠，數字沒變）。
+
+- [x] 進一篇文章，在回覆欄位打好內容，按下「送出回覆」的**當下立刻**點開另一篇文章（動作要快，搶在伺服器回應之前），確認：(a) 畫面上新點開的這篇文章沒有被剛剛的回覆污染，(b) 重新整理頁面／點回原文章後，回覆確實出現在原文章上
+- [x] 同上，但改成送出回覆後**留在原文章不動**，確認回覆立刻正常出現（沒有這次修改前就有的正常行為，這裡是確認沒有改壞）
+- [x] 刪除自己的一則回覆，送出確認彈窗後立刻點開另一篇文章，確認左側列表的回覆數徽章沒有套用到錯誤的文章/看板上
+- [x] 發一篇帶圖片的文章（圖片上傳本身比較慢，比較容易搶到這個時間差），送出後立刻切換到另一個看板，確認：(a) 目前畫面上顯示的看板列表沒有被換成剛剛發文那個看板的內容，(b) 之後切回原本那個看板，新文章確實正常出現在列表裡
+- [x] 編輯一篇文章、改標題或內容，按下「儲存」後立刻點開另一篇文章，確認：(a) 畫面上新點開的文章顯示正常、不是被拉回去顯示剛剛編輯的那篇，(b) 之後點回被編輯的那篇文章，確認修改內容確實已經生效
+- [x] 刪除一篇文章，跳出確認彈窗後，**不要馬上按確認**，先點開另一篇文章，再回頭把彈窗按確認，確認：(a) 畫面上停留在（或已經切到的）那篇文章沒有被無端清空，(b) 被刪除的那篇文章確實已經從列表中消失
+- [x] 手機版：刪除正在檢視的文章前，先用「上一篇／下一篇」切到別的文章（畫面停留在手機詳情頁，不是回列表），再讓刪除的伺服器回應真的回來，確認畫面沒有被強制退回列表（因為使用者現在看的已經不是被刪除的那篇）
+- [x] 開發者工具 Console 全程沒有紅字錯誤
+
+**[bug-fix 輪 2] 全部完成**：以上 8 項人工驗收都已經在真實 GAS 環境實際部署測試過，全部勾選 `[x]`，包含使用者回報的原始情境（送出回覆後立刻切文章）以及排查出的另外 5 個同類情境（刪除回覆、發文、編輯文章、刪除文章、手機版切文章）。`npm test` 439 個測試全綠，數字沒變（純前端修正，沒有新增 seam）。
+
+---
+
+## [安全性審查 M-1／L-1 修復輪] 驗收項目
+
+> 這輪對應 `ocr delegate rule` 取得規則清單、逐項人工核對後產出的審查報告（見對話紀錄）裡的 M-1、L-1 兩項；M-2（密碼雜湊強度）、M-3（`Code.js` 權限接線缺測試）、L-2（圖片連結不隨看板權限收斂）、L-3（登入鎖定可被針對性阻斷服務）依使用者明確指示不修補程式碼，M-2 完全不處理，L-2/L-3 已補上 `README.md`「已知限制」的文字記錄（不涉及程式碼異動，見上方對應段落），M-3 維持「`Code.js` 不進測試」的既有慣例不變。
+
+### M-1 — `uploadImageBatch` 補上權限檢查與圖片類型白名單 驗收項目
+
+修法：`src/Code.js` 的 `uploadImageBatch` 開頭加一段 `getSessionRole` + `getRolePermissions(...).articlePost` 檢查（跟 `postArticleFromForm` 同一套既有模式），沒有 `articlePost` 權限直接拒絕，不放行到 Drive 上傳；另外新增 `src/imageStorage.js` 的 `validateImageMimeType`（純函式，4 個新測試覆蓋：接受 `image/*`、拒絕非圖片 MIME、拒絕「字串裡有 image/ 但不是開頭」的規避嘗試、拒絕缺漏/空字串/非字串），`uploadImageBatch` 逐張圖片檢查，任何一張不是 `image/` 開頭就整批拒絕、不上傳。這兩項修法都落在 `Code.js`（glue，不進測試，只能人工驗收）+ `imageStorage.js`（純邏輯，已有自動化測試），分工方式跟專案既有慣例一致。
+
+- [x] 用一個角色權限表裡 `articlePost` 為 `FALSE` 的帳號登入，開啟瀏覽器開發者工具 Console，直接呼叫 `google.script.run.uploadImageBatch(currentToken, [{data: "aGVsbG8=", mimeType: "image/png", fileName: "test.png"}])`（`aGVsbG8=` 是任意合法 base64），確認回傳 `{success: false, error: '權限不足'}`，且 Drive 對應資料夾裡沒有出現這個檔案
+- [x] 用一個 `articlePost` 為 `TRUE` 的正常帳號，對著同一支函式呼叫，改傳 `mimeType: "text/html"`，確認回傳 `{success: false, error: '檔案格式不支援，僅限圖片'}`，且 Drive 裡沒有出現這個檔案
+- [x] 同一個正常帳號，正常走 UI 發文/編輯文章、上傳真實圖片檔案（不透過 Console），確認功能完全沒有被誤傷——圖片正確上傳、正確顯示，跟修改前行為一致
+- [x] 確認 `npm test` 443 個測試全綠（比修復前的 439 多 4 個，全部來自 `validateImageMimeType`）
+- [x] 開發者工具 Console 全程沒有非預期的紅字錯誤
+
+### L-1 — `renderArticleDetail` 的 4 處內嵌 onclick 改成事件監聽器閉包 驗收項目
+
+修法：`儲存`／`🔗 分享`／`🗑 刪除`（文章）／`🗑 刪除`（回覆）這 4 處原本用樣板字串把 `articleId`/`boardId`/`replyId` 接進 `onclick="..."` 屬性字串裡，改成先渲染成沒有 `onclick` 屬性的按鈕（`id="btnSaveEditArticle"`/`id="btnShareArticle"`/`id="btnDeleteArticle"`/`id="btnDeleteReply_<replyId>"`），`rightPanel.innerHTML = html` 之後再用 `document.getElementById(...).onclick = function() { ... }` 閉包直接帶入真正的 JS 值（跟看板清單彈窗/提及通知彈窗/文章列表項目同一套既有安全寫法），不再經過字串插值。純 `Index.html` 前端修正，沒有 seam，不影響任何既有測試（`npm test` 數字沒有因為這項改動而變動）。
+
+- [x] 點開一篇自己能編輯的文章，依序測試：點「✏️ 編輯」→「儲存」能正常送出修改；點「🔗 分享」能正常開啟分享/複製連結；點「🗑 刪除」能正常跳出確認彈窗並刪除成功——確認這 3 個按鈕功能都沒有被改壞
+- [x] 對一則自己能刪除的回覆點「🗑 刪除」，確認能正常跳出確認彈窗並刪除成功
+- [x] 對一篇有多則回覆（例如 5 則以上，其中有些自己能刪、有些不能）的文章，逐一點每一則「有顯示刪除」的回覆的刪除按鈕，確認**每一則刪掉的都是自己點的那一則**，沒有刪錯（驗證閉包正確帶入各自的 `replyId`，不是全部共用到最後一個迴圈變數）
+- [x] 瀏覽器開發者工具檢視頁面原始碼（檢視原始碼，不是 Elements 面板），確認這 4 個按鈕/span 元素的 HTML 裡**沒有** `onclick="..."` 屬性，只有 `id`
+- [x] 開發者工具 Console 全程沒有紅字錯誤
+
+**[安全性審查 M-1／L-1 修復輪] 全部完成**：以上人工驗收（M-1、L-1 共 10 項）都已經在真實 GAS 環境實際部署測試過，全部勾選 `[x]`。
+
+---
+
+## [/mycr 複審發現修復輪] 驗收項目
+
+> 這輪對應使用者用 `/mycr` 三層審查方法論複查後回報的 5 個發現：Finding 1（圖片 MIME 白名單允許 `image/svg+xml`）、Finding 2（就是既有的 M-2，密碼雜湊強度，維持不修補）、Finding 3（登入路徑計時側通道/帳號列舉）、Finding 4（`bootstrap.js` 註解與現狀不一致）、Finding 5（`var` 慣例，非缺陷，不處理）。經 `/grill-me` 對齊後的修補範圍：**Finding 1 修程式碼、Finding 3 只記錄不修程式碼、Finding 4 修註解**。另外一併處理了 `/mycr` 報告裡的 N-1（session 快照權限降級延遲只記錄不修程式碼）、N-2（`handlePostArticle`/`handleMobilePostArticle` 重複邏輯，暫緩重構，加上互相提醒的註解當輕量緩解）。
+
+### Finding 1 — 圖片 MIME 類型白名單改成明確列舉 驗收項目
+
+修法：`src/imageStorage.js` 的 `validateImageMimeType` 從「開頭是不是 `image/`」的前綴比對，改成明確列舉 `ALLOWED_IMAGE_MIME_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp']` 這個允許清單，`image/svg+xml` 不在清單內，會被拒絕。新增/調整測試共 3 個新測試（含 `image/svg+xml` 的回歸測試、清單外其他圖片格式如 `image/bmp`/`image/tiff` 也一併拒絕的測試、允許清單本身內容的測試）。沒有回頭清查既有 Drive 資料夾裡有沒有已經上傳過的 SVG 檔案（使用者已確認不需要）。
+
+- [x] 用一個有 `articlePost` 權限的帳號，開啟瀏覽器開發者工具 Console，直接呼叫 `google.script.run.uploadImageBatch(currentToken, [{data: "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjwvc3ZnPg==", mimeType: "image/svg+xml", fileName: "test.svg"}])`（這串 base64 是一個最小的空白 SVG），確認回傳 `{success: false, error: '檔案格式不支援，僅限圖片'}`，且 Drive 對應資料夾裡沒有出現這個檔案
+- [x] 同一個帳號，正常走 UI 上傳真實 PNG/JPEG 圖片，確認功能完全沒有被誤傷——圖片正確上傳、正確顯示，跟修改前行為一致
+- [x] 確認 `npm test` 446 個測試全綠（比這輪修復前的 443 多 3 個，全部來自 `validateImageMimeType` 的新測試）
+- [x] 開發者工具 Console 全程沒有非預期的紅字錯誤
+
+### Finding 4 — `bootstrap.js` 註解同步現狀 驗收項目
+
+修法：純文件/註解修正，沒有改動任何邏輯，`parseBootstrapParams` 的行為完全沒變。
+
+- [x] 確認深連結分享功能（開啟一個帶 `?board=xxx&article=xxx` 查詢參數的網址）還是能正常直接跳到指定文章，行為跟修改前一致
+- [x] 確認 `npm test` 數字沒有因為這項改動而變動（純註解，`bootstrap.js` 對應的測試檔案 `test/bootstrap.test.js` 應該維持原本的測試數量全綠）
+
+### Finding 3、N-1（只記錄不修程式碼）
+
+已補進 `README.md`「已知限制」，不涉及程式碼異動，不需要額外的人工驗收步驟——確認 `README.md` 讀起來合理、跟程式碼現況一致即可。
+
+### N-2（暫緩重構，加註互相提醒的註解）
+
+- [x] 確認 `handlePostArticle`（桌面版）跟 `handleMobilePostArticle`（手機版）開頭都各自加上了指向對方的提醒註解，且兩支函式的實際發文行為都沒有被這次加註解的動作影響
+
+**[/mycr 複審發現修復輪] 全部完成**：Finding 1、Finding 4、N-2 的人工驗收都已經在真實 GAS 環境實際部署測試過，全部勾選 `[x]`。Finding 3、N-1（只記錄不修）、Finding 2/5（維持不處理）不需要人工驗收。後續 `/mycr` 第三次複查發現的 N-3（`imageStorage.js` JSDoc 位置）、N-4（`bootstrap.js` 檔案開頭註解不一致）都是純註解修正，靠 `npm test` 數字沒有變動確認，不需要額外的人工驗收項目。

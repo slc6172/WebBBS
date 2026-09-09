@@ -97,3 +97,57 @@ test('createReplyForRole reads the Articles sheet at most once per call', () => 
 
   expect(ss.getSheetByName('Articles')._getReadCount()).toBeLessThanOrEqual(1);
 });
+
+// ---- @提及輪 ticket 05 ----
+
+function seedUser(ss, row) {
+  ss.getSheetByName('Users').appendRow(row);
+}
+
+function getPendingMentions(ss, userId) {
+  const rows = ss.getSheetByName('Users').getRange(2, 1, ss.getSheetByName('Users').getLastRow() - 1, 11).getValues();
+  const row = rows.find(r => r[0] === userId);
+  return row ? JSON.parse(row[10] || '[]') : null;
+}
+
+test('a valid @mention in a reply\'s content notifies the mentioned user after the reply is successfully posted', () => {
+  const ss = createFakeSpreadsheet();
+  ensureSchema(ss);
+  seedBoard(ss, ['gossip', '八卦板', '閒聊', 1, '', '', 'ALL']);
+  seedArticle(ss.getSheetByName('Articles'), { title: '今天天氣真好' });
+  seedUser(ss, ['carol003', 'h', 's', 'user', "'2026/07/01 00:00:00", 0, '', 0, 0, '', '']);
+  const lock = createFakeLock();
+
+  createReplyForRole(ss, lock, 'user', makeInput({ content: '@carol003 你也來看看' }));
+
+  const pending = getPendingMentions(ss, 'carol003');
+  expect(pending).toHaveLength(1);
+  expect(pending[0].articleId).toBe('a1');
+  expect(pending[0].articleTitle).toBe('今天天氣真好');
+  expect(pending[0].mentionedBy).toBe('bob02');
+});
+
+test('when createReplyForRole is rejected (e.g. article does not exist), no mention is recorded even with a valid @mention in the content', () => {
+  const ss = createFakeSpreadsheet();
+  ensureSchema(ss);
+  seedBoard(ss, ['gossip', '八卦板', '閒聊', 1, '', '', 'ALL']);
+  seedUser(ss, ['carol003', 'h', 's', 'user', "'2026/07/01 00:00:00", 0, '', 0, 0, '', '']);
+  const lock = createFakeLock();
+
+  createReplyForRole(ss, lock, 'user', makeInput({ articleId: 'does-not-exist', content: '@carol003 你也來看看' }));
+
+  expect(getPendingMentions(ss, 'carol003')).toEqual([]);
+});
+
+test('createReplyForRole still reads the Articles sheet at most once per call even when the content has a valid @mention', () => {
+  const ss = createFakeSpreadsheet();
+  ensureSchema(ss);
+  seedBoard(ss, ['gossip', '八卦板', '閒聊', 1, '', '', 'ALL']);
+  seedArticle(ss.getSheetByName('Articles'), {});
+  seedUser(ss, ['carol003', 'h', 's', 'user', "'2026/07/01 00:00:00", 0, '', 0, 0, '', '']);
+  const lock = createFakeLock();
+
+  createReplyForRole(ss, lock, 'user', makeInput({ content: '@carol003 你也來看看' }));
+
+  expect(ss.getSheetByName('Articles')._getReadCount()).toBeLessThanOrEqual(1);
+});

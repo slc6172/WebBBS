@@ -37,6 +37,38 @@ function validateImageCount(count) {
   return { valid: true };
 }
 
+// 複審 Finding 1 修復（見對話紀錄）：允許清單本身，明確列舉，不做前綴比對——
+// image/svg+xml 這類「開頭是 image/ 但語意上不安全」的格式必須被排除，見下面
+// validateImageMimeType 的完整說明。清單只列目前專案裡實際用得到的常見網頁
+// 圖片格式，之後真的有需求再加，不預先猜測。
+var ALLOWED_IMAGE_MIME_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+
+/**
+ * 安全性審查 M-1 修復延伸 + 複審 Finding 1 修復：uploadImageBatch 原本把
+ * 客戶端聲稱的 mimeType 原封不動寫進 Utilities.newBlob，沒有限制只能是
+ * 圖片——這支函式只負責純判斷，實際呼叫 Drive 上傳前的攔截點在 Code.js 的
+ * uploadImageBatch，兩者合起來才是完整的修復（跟這個檔案其他 validate*
+ * 函式一樣的分工：純邏輯留在這裡好測試，GAS 呼叫留在 Code.js）。
+ *
+ * 複審 Finding 1（見對話紀錄）：第一版用 mimeType.indexOf('image/') === 0
+ * 判斷「開頭是不是 image/」，image/svg+xml 完全符合這個條件、會通過驗證——
+ * SVG 可以內嵌 <script>/事件處理器，雖然前端一律用 <img> 標籤顯示（瀏覽器
+ * 不會執行 <img> 裡 SVG 內嵌的腳本），但檔案上傳到 Drive 後一律設成「知道
+ * 連結任何人可看」，如果有人直接開啟該 Drive 連結（不透過 <img>，而是瀏覽器
+ * 直接導航），內嵌腳本會在 Drive 的網域下執行，是一個不必要的儲存型內容
+ * 注入風險面（不影響本應用自己的 session，但仍是可以避免的攻擊面）。改成
+ * 明確列舉允許清單、不再用前綴比對，把這類格式一併排除掉，而不是等出事才
+ * 逐一加黑名單。
+ * @param {*} mimeType
+ * @returns {{valid: boolean, error?: string}}
+ */
+function validateImageMimeType(mimeType) {
+  if (typeof mimeType !== 'string' || ALLOWED_IMAGE_MIME_TYPES.indexOf(mimeType) === -1) {
+    return { valid: false, error: '檔案格式不支援，僅限圖片' };
+  }
+  return { valid: true };
+}
+
 /**
  * 取得圖片根資料夾；指令碼屬性沒設定過，或設定的 ID 已經失效（例如資料夾被
  * 手動刪除），都視為「尚未設定」，自動建立一個新資料夾並把 ID 寫回指令碼屬性。
@@ -193,6 +225,8 @@ if (typeof module !== 'undefined' && module.exports) {
     resolveImageSlots: resolveImageSlots,
     compactImageUrls: compactImageUrls,
     validateImageCount: validateImageCount,
+    validateImageMimeType: validateImageMimeType,
+    ALLOWED_IMAGE_MIME_TYPES: ALLOWED_IMAGE_MIME_TYPES,
     MAX_IMAGES_PER_ARTICLE: MAX_IMAGES_PER_ARTICLE,
     ROOT_FOLDER_PROPERTY_KEY: ROOT_FOLDER_PROPERTY_KEY,
     ROOT_FOLDER_NAME: ROOT_FOLDER_NAME

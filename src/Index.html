@@ -6,6 +6,41 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>BBS 系統</title>
   <style>
+    /* ---- 淡雅風設計 token 層：只定義顏色/圓角/陰影的語意變數，下面所有規則
+       改成引用這裡的變數，不新增/刪除任何選擇器、不動任何版面尺寸或斷點數字。
+       之後要再調色只需要改這一區塊。 ---- */
+    :root {
+      /* 中性色階（暖灰調，取代原本偏藍的 slate 色階） */
+      --color-bg: #F6F5F1;            /* 頁面底色，大部分時候會被兩側白色面板蓋住 */
+      --color-surface: #FFFFFF;       /* 卡片/面板主背景 */
+      --color-surface-muted: #F1F0E9; /* 淺色襯底：hover、次要區塊、圖片留白 */
+      --color-border: #E4E1D7;        /* 一般分隔線/淺邊框 */
+      --color-border-strong: #CFCBBC; /* 輸入框、按鈕外框，較明顯的邊框 */
+      --color-text: #33352E;          /* 主要文字（標題、內文重點） */
+      --color-text-secondary: #4E5049;/* 一般內文 */
+      --color-text-muted: #83816E;    /* meta 資訊、輔助文字 */
+      --color-text-faint: #ACA894;    /* 停用狀態、佔位文字 */
+
+      /* 主色：鼠尾草／玉色調，取代原本飽和的品牌藍 */
+      --color-primary: #5C8A70;
+      --color-primary-hover: #4A7460;
+      --color-primary-soft: #E3ECE5;  /* 選取列反白等大面積淺底 */
+
+      /* 頂列：保留一塊深色當視覺錨點，改成深苔綠而不是深藍灰 */
+      --color-topbar-bg: #303C34;
+      --color-topbar-text: #F6F5F0;
+
+      /* 語意色（危險/警告/未讀）：維持清楚可辨識的飽和度，只把色相往新色盤暖化，
+         不做大幅降飽和——這幾個顏色的功能是警示，太淡會失去辨識度 */
+      --color-danger: #B3492E;
+      --color-danger-hover: #93381F;
+      --color-warning-text: #A2660E;
+      --color-warning-bg: #FBF3E1;
+
+      /* 陰影統一用暖灰黑而不是純黑，跟整體暖色調一致 */
+      --shadow-rgb: 58, 53, 44;
+    }
+
     /* 1. 滿版與基礎佈局 */
     * { box-sizing: border-box; }
     html, body {
@@ -14,7 +49,7 @@
       height: 100%;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
       overflow: hidden; /* 鎖定外層，防止全頁滾動條 */
-      background-color: #f4f6f9;
+      background-color: var(--color-bg);
     }
 
     body {
@@ -25,20 +60,20 @@
     /* 2. 最上方固定列 (Top Bar) */
     .top-bar {
       height: 50px;
-      background-color: #1e293b;
-      color: #ffffff;
+      background-color: var(--color-topbar-bg);
+      color: var(--color-topbar-text);
       display: flex;
       align-items: center;
       justify-content: space-between;
       padding: 0 20px;
       flex-shrink: 0;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      box-shadow: 0 2px 4px rgba(var(--shadow-rgb), 0.16);
       position: relative; /* .mobile-more-menu 用 position:absolute 定位，需要這裡當定位基準 */
     }
     .top-bar .logo {
       font-size: 1.2rem;
-      font-weight: bold;
-      letter-spacing: 1px;
+      font-weight: 600;
+      letter-spacing: 1.5px;
     }
     .top-bar .user-panel {
       display: flex;
@@ -48,8 +83,8 @@
     }
     .top-bar input {
       padding: 4px 8px;
-      border-radius: 4px;
-      border: 1px solid #ccc;
+      border-radius: 6px;
+      border: 1px solid var(--color-border-strong);
     }
 
     /* 3. 主區域雙欄分割 */
@@ -64,11 +99,11 @@
     .left-panel {
       width: 380px;
       min-width: 320px;
-      border-right: 1px solid #cbd5e1;
+      border-right: 1px solid var(--color-border-strong);
       display: flex;
       flex-direction: column;
       padding: 12px;
-      background-color: #ffffff;
+      background-color: var(--color-surface);
       gap: 8px;
       overflow-y: auto; /* 保險：main-container 是固定高度 + overflow:hidden，內容一旦超高，
                             沒有這個會被直接裁掉、完全碰不到，不是被擋住而已 */
@@ -82,8 +117,8 @@
     .board-selector-box select {
       flex: 1;
       padding: 6px 10px;
-      border-radius: 4px;
-      border: 1px solid #94a3b8;
+      border-radius: 6px;
+      border: 1px solid var(--color-border-strong);
       font-size: 0.95rem;
     }
 
@@ -91,9 +126,10 @@
     .article-list-wrapper {
       flex: 1;
       overflow-y: auto;
-      border: 1px solid #e2e8f0;
-      border-radius: 6px;
-      background-color: #ffffff;
+      scroll-behavior: smooth;
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      background-color: var(--color-surface);
     }
 
     /* ---- 跳頁 pager bar：桌面/手機共用同一套，靠 flex 自然縮放，不需要另開
@@ -110,38 +146,71 @@
     }
     .pager-arrow-btn {
       background: none;
-      border: 1px solid #cbd5e1;
-      border-radius: 4px;
-      color: #334155;
+      border: 1px solid var(--color-border-strong);
+      border-radius: 6px;
+      color: var(--color-text-secondary);
       width: 30px;
       height: 28px;
       flex-shrink: 0;
       font-size: 0.85rem;
       cursor: pointer;
     }
-    .pager-arrow-btn:hover:not(:disabled) { background-color: #f1f5f9; }
-    .pager-arrow-btn:disabled { color: #cbd5e1; border-color: #e2e8f0; cursor: default; }
+    .pager-arrow-btn:hover:not(:disabled) { background-color: var(--color-surface-muted); }
+    .pager-arrow-btn:disabled { color: var(--color-text-faint); border-color: var(--color-border); cursor: default; }
     .pager-page-indicator {
       flex: 1;
       min-width: 0; /* 讓 text-overflow 在窄寬度下真的生效 */
       background: none;
-      border: 1px solid #e2e8f0;
-      border-radius: 4px;
+      border: 1px solid var(--color-border);
+      border-radius: 6px;
       padding: 4px 6px;
       font-size: 0.8rem;
-      color: #475569;
+      color: var(--color-text-secondary);
       text-align: center;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
       cursor: pointer;
     }
-    .pager-page-indicator:hover { background-color: #f8fafc; border-color: #cbd5e1; }
+    .pager-page-indicator:hover { background-color: var(--color-surface-muted); border-color: var(--color-border-strong); }
+
+    /* 看板內搜尋（ticket 04）：搜尋框常駐，狀態列（結果數/清除搜尋/擴大範圍）
+       在有搜尋時才出現，跟跳頁 bar 位置重疊、同一時間只會顯示其中一個 */
+    .board-search-bar {
+      display: flex;
+      gap: 6px;
+      margin-top: 8px;
+      flex-shrink: 0;
+    }
+    .board-search-bar input {
+      flex: 1;
+      min-width: 0;
+      border: 1px solid var(--color-border-strong);
+      border-radius: 6px;
+      padding: 5px 8px;
+      font-size: 0.85rem;
+    }
+    .board-search-status-bar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 6px;
+      flex-shrink: 0;
+      font-size: 0.78rem;
+      color: var(--color-text-secondary);
+    }
+    .board-search-status-bar #searchResultCount {
+      flex: 1;
+      min-width: 0;
+    }
+    /* bug-fix 輪：手機窄寬度下這裡的 min-width:0 跟兩顆按鈕擠在同一行會逐字
+       斷行，下面 767px media query 有覆蓋規則讓文字改成獨立佔滿一整行，
+       這裡的 flex:1/min-width:0 只在桌面版夠寬的情況下才會是目前這個樣子。 */
 
     /* 單筆文章高密度樣式 (36px 高) */
     .article-item {
       padding: 6px 10px;
-      border-bottom: 1px solid #f1f5f9;
+      border-bottom: 1px solid var(--color-border);
       cursor: pointer;
       display: flex;
       justify-content: space-between;
@@ -151,16 +220,16 @@
       transition: background 0.1s;
     }
     .article-item:hover {
-      background-color: #f1f5f9;
+      background-color: var(--color-surface-muted);
     }
     .article-item.active {
-      background-color: #dbeafe;
-      border-left: 4px solid #2563eb;
+      background-color: var(--color-primary-soft);
+      border-left: 4px solid var(--color-primary);
     }
     .article-item .title {
       font-size: 0.88rem;
       font-weight: 500;
-      color: #0f172a;
+      color: var(--color-text);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -169,44 +238,58 @@
     }
     .article-item .meta {
       font-size: 0.78rem;
-      color: #64748b;
+      color: var(--color-text-muted);
       display: flex;
       gap: 8px;
       flex-shrink: 0;
+    }
+    /* 未讀文章/新回覆徽章（ticket 01）：36px 單行版面空間有限，字級縮小塞進去。
+       新文章＝標題前；已讀文章有新回覆＝回覆數前，兩者共用同一個樣式 */
+    .badge-new {
+      display: inline-block;
+      font-size: 0.62rem;
+      font-weight: 700;
+      color: #ffffff;
+      background-color: var(--color-danger);
+      border-radius: 3px;
+      padding: 0 3px;
+      margin-right: 3px;
+      line-height: 1.3;
+      vertical-align: middle;
     }
 
     /* 左側按鈕與折疊發文區 */
     .btn-toggle-post {
       width: 100%;
       padding: 8px;
-      background-color: #2563eb;
+      background-color: var(--color-primary);
       color: white;
       border: none;
-      border-radius: 4px;
+      border-radius: 6px;
       cursor: pointer;
-      font-weight: bold;
+      font-weight: 600;
       font-size: 0.9rem;
     }
-    .btn-toggle-post:hover { background-color: #1d4ed8; }
+    .btn-toggle-post:hover { background-color: var(--color-primary-hover); }
 
     .post-article-form {
       display: flex;
       flex-direction: column;
       gap: 8px;
       padding: 12px;
-      border: 1px solid #cbd5e1;
-      border-radius: 6px;
-      background-color: #f8fafc;
+      border: 1px solid var(--color-border-strong);
+      border-radius: 8px;
+      background-color: var(--color-surface-muted);
     }
     .post-article-form .form-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
     }
-    .post-article-form h4 { margin: 0; color: #334155; }
+    .post-article-form h4 { margin: 0; color: var(--color-text-secondary); }
     .post-article-form .btn-close {
       cursor: pointer;
-      color: #64748b;
+      color: var(--color-text-muted);
       font-size: 0.9rem;
       font-weight: bold;
     }
@@ -214,8 +297,8 @@
     .post-article-form textarea {
       width: 100%;
       padding: 6px 8px;
-      border: 1px solid #cbd5e1;
-      border-radius: 4px;
+      border: 1px solid var(--color-border-strong);
+      border-radius: 6px;
       font-size: 0.85rem;
     }
     .post-article-form textarea { height: 60px; resize: none; }
@@ -227,29 +310,29 @@
       flex-direction: column;
       padding: 24px;
       overflow-y: auto;
-      background-color: #ffffff;
+      background-color: var(--color-surface);
     }
 
     .article-detail-card {
-      border-bottom: 2px solid #e2e8f0;
+      border-bottom: 2px solid var(--color-border);
       padding-bottom: 20px;
       margin-bottom: 20px;
     }
     .article-detail-card .header-title {
       font-size: 1.5rem;
-      font-weight: bold;
-      color: #1e293b;
+      font-weight: 600;
+      color: var(--color-text);
       margin-bottom: 8px;
     }
     .article-detail-card .header-meta {
       font-size: 0.85rem;
-      color: #64748b;
+      color: var(--color-text-muted);
       margin-bottom: 16px;
     }
     .article-detail-card .body-content {
       font-size: 1rem;
       line-height: 1.6;
-      color: #334155;
+      color: var(--color-text-secondary);
       white-space: pre-wrap;
     }
 
@@ -257,21 +340,21 @@
     .replies-section {
       margin-bottom: 24px;
     }
-    .replies-section h4 { margin-bottom: 12px; color: #475569; }
+    .replies-section h4 { margin-bottom: 12px; color: var(--color-text-secondary); }
     .reply-item {
       padding: 10px 12px;
       border-radius: 6px;
-      background-color: #f1f5f9;
+      background-color: var(--color-surface-muted);
       margin-bottom: 8px;
     }
     .reply-item .reply-meta {
       font-size: 0.8rem;
-      color: #64748b;
+      color: var(--color-text-muted);
       margin-bottom: 4px;
     }
     .reply-item .reply-content {
       font-size: 0.9rem;
-      color: #1e293b;
+      color: var(--color-text);
       white-space: pre-wrap;
     }
 
@@ -282,33 +365,33 @@
       gap: 8px;
       margin-top: auto;
       padding-top: 16px;
-      border-top: 1px solid #e2e8f0;
+      border-top: 1px solid var(--color-border);
     }
     .post-reply-form textarea {
       width: 100%;
       height: 70px;
       padding: 8px;
-      border: 1px solid #cbd5e1;
-      border-radius: 4px;
+      border: 1px solid var(--color-border-strong);
+      border-radius: 6px;
       resize: none;
     }
 
     /* 通用按鈕樣式 */
     button.btn-primary {
       padding: 6px 12px;
-      background-color: #2563eb;
+      background-color: var(--color-primary);
       color: white;
       border: none;
-      border-radius: 4px;
+      border-radius: 6px;
       cursor: pointer;
       font-weight: 500;
     }
-    button.btn-primary:hover { background-color: #1d4ed8; }
-    button.secondary { background-color: #64748b; border: none; color: white; padding: 6px 12px; border-radius: 4px; cursor: pointer; }
-    button.secondary:hover { background-color: #475569; }
+    button.btn-primary:hover { background-color: var(--color-primary-hover); }
+    button.secondary { background-color: var(--color-text-muted); border: none; color: white; padding: 6px 12px; border-radius: 6px; cursor: pointer; }
+    button.secondary:hover { background-color: var(--color-text-secondary); }
 
     .placeholder-msg {
-      color: #94a3b8;
+      color: var(--color-text-faint);
       text-align: center;
       margin-top: 100px;
       font-size: 1.1rem;
@@ -320,7 +403,7 @@
       margin-bottom: 12px;
       background: none;
       border: none;
-      color: #2563eb;
+      color: var(--color-primary);
       font-size: 0.95rem;
       font-weight: 600;
       cursor: pointer;
@@ -344,14 +427,14 @@
     .mobile-article-nav-btn {
       flex: 1;
       background: none;
-      border: 1px solid #cbd5e1;
-      border-radius: 4px;
-      color: #334155;
+      border: 1px solid var(--color-border-strong);
+      border-radius: 6px;
+      color: var(--color-text-secondary);
       padding: 7px 8px;
       font-size: 0.85rem;
       cursor: pointer;
     }
-    .mobile-article-nav-btn:disabled { color: #cbd5e1; border-color: #e2e8f0; cursor: default; }
+    .mobile-article-nav-btn:disabled { color: var(--color-text-faint); border-color: var(--color-border); cursor: default; }
 
     /* ---- ticket 02：手機版頂列「⋯」選單 ---- */
     /* 這條規則必須放在下面的 @media 區塊「之前」——兩條規則優先權(specificity)一樣，
@@ -361,8 +444,8 @@
       display: none; /* 桌面版一律不顯示，下方 media query 在手機寬度會覆蓋成 inline-flex */
       background: none;
       border: 1px solid rgba(255,255,255,0.4);
-      color: #fff;
-      border-radius: 4px;
+      color: var(--color-topbar-text);
+      border-radius: 6px;
       padding: 2px 8px;
       font-size: 1rem;
       cursor: pointer;
@@ -393,6 +476,25 @@
 
       .mobile-more-btn { display: inline-flex; }
 
+      /* bug-fix 輪：手機版搜尋狀態列——「找到 N 篇符合的文章」這段文字跟兩顆
+         按鈕（尤其「載入更早的文章再搜一次」字很長）原本擠在同一行，桌面版
+         夠寬看不出問題，但手機窄寬度下文字可用空間被壓到不到一個中文字寬，
+         中文沒有天然斷行點，逐字換行、整條狀態列被撐得很高，是同一種「按鈕
+         擠壓文字」問題的另一個案例（跟下面 header-title 那個修法性質一樣）。
+         這裡讓狀態列允許換行、文字那個 span 強制佔滿整行寬度——文字自己
+         獨立一行後就有足夠空間，正常照 CSS 預設換行（不會再逐字斷行）；
+         兩顆按鈕沒有被設 min-width:0（問題只出在文字那個 span 上），自然被
+         推到下一行、彼此有足夠空間並排，擠不下時也只會整顆按鈕換到再下一行，
+         不會有逐字斷行的問題。DOM 順序本來就是「文字在前、按鈕在後」，跟
+         下面 header-title 的案例不同，不需要額外用 column-reverse 調換視覺
+         順序。 */
+      .board-search-status-bar {
+        flex-wrap: wrap;
+      }
+      .board-search-status-bar #searchResultCount {
+        flex-basis: 100%;
+      }
+
       /* 手機版標題列：分享／LINE／編輯／刪除按鈕改佔獨立一列（顯示在上方），
          標題文字獨立佔下一列、有全部寬度可用，不會再被按鈕擠壓導致被迫換行。
          用 column-reverse 讓 DOM 順序（標題 span 在前、按鈕 div 在後）視覺上
@@ -421,28 +523,28 @@
       width: 56px;
       height: 56px;
       border-radius: 50%;
-      background-color: #2563eb;
+      background-color: var(--color-primary);
       color: #fff;
       border: none;
       font-size: 1.8rem;
       line-height: 1;
       align-items: center;
       justify-content: center;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.25);
+      box-shadow: 0 4px 10px rgba(var(--shadow-rgb), 0.22);
       cursor: pointer;
       z-index: 20;
     }
-    .mobile-fab:hover { background-color: #1d4ed8; }
+    .mobile-fab:hover { background-color: var(--color-primary-hover); }
 
     .mobile-more-menu {
       display: none;
       position: absolute;
       top: 100%;
       right: 12px;
-      background: #ffffff;
-      border: 1px solid #cbd5e1;
-      border-radius: 6px;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+      background: var(--color-surface);
+      border: 1px solid var(--color-border-strong);
+      border-radius: 8px;
+      box-shadow: 0 4px 10px rgba(var(--shadow-rgb), 0.14);
       min-width: 180px;
       z-index: 30;
       overflow: hidden;
@@ -455,9 +557,9 @@
       padding: 10px 14px;
       background: none;
       border: none;
-      border-bottom: 1px solid #f1f5f9;
+      border-bottom: 1px solid var(--color-border);
       font-size: 0.9rem;
-      color: #1e293b;
+      color: var(--color-text);
       cursor: pointer;
     }
     .mobile-more-menu .mobile-more-item:last-child { border-bottom: none; }
@@ -466,13 +568,13 @@
       width: 100%;
       padding: 10px 14px;
       font-size: 0.85rem;
-      color: #64748b;
-      border-bottom: 1px solid #f1f5f9;
+      color: var(--color-text-muted);
+      border-bottom: 1px solid var(--color-border);
     }
     .mobile-more-menu .mobile-more-empty {
       padding: 10px 14px;
       font-size: 0.85rem;
-      color: #94a3b8;
+      color: var(--color-text-faint);
     }
 
     /* ---- ticket 02：手機版全螢幕發文頁 ---- */
@@ -480,7 +582,7 @@
       display: none;
       position: fixed;
       inset: 0;
-      background: #ffffff;
+      background: var(--color-surface);
       z-index: 40;
       flex-direction: column;
     }
@@ -493,10 +595,10 @@
       align-items: center;
       gap: 12px;
       padding: 0 16px;
-      border-bottom: 1px solid #e2e8f0;
+      border-bottom: 1px solid var(--color-border);
     }
     .mobile-compose-header .mobile-back-btn { display: inline-block; margin-bottom: 0; }
-    .mobile-compose-header h3 { margin: 0; font-size: 1.05rem; color: #1e293b; }
+    .mobile-compose-header h3 { margin: 0; font-size: 1.05rem; color: var(--color-text); }
     .mobile-compose-body {
       flex: 1;
       overflow-y: auto;
@@ -509,8 +611,8 @@
     .mobile-compose-body textarea {
       width: 100%;
       padding: 8px;
-      border: 1px solid #cbd5e1;
-      border-radius: 4px;
+      border: 1px solid var(--color-border-strong);
+      border-radius: 6px;
       font-size: 0.95rem;
     }
     .mobile-compose-body textarea { flex: 1; min-height: 200px; resize: none; }
@@ -519,12 +621,12 @@
     .board-selector-box { display: flex; align-items: center; gap: 8px; }
     .board-list-btn {
       background: none;
-      border: 1px solid #cbd5e1;
-      border-radius: 4px;
+      border: 1px solid var(--color-border-strong);
+      border-radius: 6px;
       padding: 2px 8px;
       font-size: 0.95rem;
       cursor: pointer;
-      color: #334155;
+      color: var(--color-text-secondary);
     }
     @media (max-width: 767px) {
       /* 手機版收進「⋯」選單，見 registerMoreMenuItem，避免跟下拉選單旁的按鈕重複 */
@@ -552,14 +654,14 @@
       display: none;
       position: fixed;
       inset: 0;
-      background: rgba(15, 23, 42, 0.45);
+      background: rgba(46, 43, 36, 0.45);
       z-index: 50;
       align-items: center;
       justify-content: center;
     }
     .board-list-popup.open { display: flex; }
     .board-list-popup-content {
-      background: #fff;
+      background: var(--color-surface);
       border-radius: 8px;
       width: 90%;
       max-width: 420px;
@@ -573,12 +675,12 @@
       justify-content: space-between;
       align-items: center;
       padding: 12px 16px;
-      border-bottom: 1px solid #e2e8f0;
+      border-bottom: 1px solid var(--color-border);
       flex-shrink: 0;
     }
-    .board-list-popup-header h3 { margin: 0; font-size: 1.05rem; color: #1e293b; }
+    .board-list-popup-header h3 { margin: 0; font-size: 1.05rem; color: var(--color-text); }
     .board-list-popup-close {
-      background: none; border: none; font-size: 1.2rem; cursor: pointer; color: #64748b; line-height: 1;
+      background: none; border: none; font-size: 1.2rem; cursor: pointer; color: var(--color-text-muted); line-height: 1;
     }
     .board-list-popup-body { overflow-y: auto; padding: 6px 0; }
     .board-list-popup-item {
@@ -589,14 +691,14 @@
       border: none;
       padding: 10px 16px;
       cursor: pointer;
-      border-bottom: 1px solid #f1f5f9;
+      border-bottom: 1px solid var(--color-border);
     }
-    .board-list-popup-item:hover { background: #f8fafc; }
-    .board-list-popup-item .board-name { font-weight: 600; color: #1e293b; }
-    .board-list-popup-item .board-desc { font-size: 0.85rem; color: #64748b; margin-top: 2px; }
+    .board-list-popup-item:hover { background: var(--color-surface-muted); }
+    .board-list-popup-item .board-name { font-weight: 600; color: var(--color-text); }
+    .board-list-popup-item .board-desc { font-size: 0.85rem; color: var(--color-text-muted); margin-top: 2px; }
     .board-badge {
       display: inline-block;
-      background-color: #ef4444;
+      background-color: var(--color-danger);
       color: #fff;
       font-size: 0.7rem;
       font-weight: 700;
@@ -607,9 +709,9 @@
     }
 
     /* ---- ticket 08：排行榜彈窗 ---- */
-    .leaderboard-category { padding: 10px 16px; border-bottom: 1px solid #f1f5f9; }
+    .leaderboard-category { padding: 10px 16px; border-bottom: 1px solid var(--color-border); }
     .leaderboard-category:last-child { border-bottom: none; }
-    .leaderboard-category h4 { margin: 0 0 6px 0; font-size: 0.95rem; color: #1e293b; }
+    .leaderboard-category h4 { margin: 0 0 6px 0; font-size: 0.95rem; color: var(--color-text); }
     .leaderboard-row {
       display: flex;
       align-items: center;
@@ -617,22 +719,22 @@
       padding: 4px 0;
       font-size: 0.9rem;
     }
-    .leaderboard-rank { font-weight: 700; color: #2563eb; width: 28px; flex-shrink: 0; }
-    .leaderboard-user { flex: 1; color: #1e293b; }
-    .leaderboard-value { color: #64748b; }
-    .leaderboard-empty { font-size: 0.85rem; color: #94a3b8; }
+    .leaderboard-rank { font-weight: 700; color: var(--color-primary); width: 28px; flex-shrink: 0; }
+    .leaderboard-user { flex: 1; color: var(--color-text); }
+    .leaderboard-value { color: var(--color-text-muted); }
+    .leaderboard-empty { font-size: 0.85rem; color: var(--color-text-faint); }
 
     /* ---- ticket 09：圖片上傳區塊 ---- */
     .image-upload-box {
-      border: 1px dashed #cbd5e1;
-      border-radius: 6px;
+      border: 1px dashed var(--color-border-strong);
+      border-radius: 8px;
       padding: 10px;
       display: flex;
       flex-direction: column;
       gap: 6px;
     }
-    .image-upload-label { font-size: 0.85rem; color: #475569; }
-    .image-upload-warning { font-size: 0.78rem; color: #b45309; background: #fffbeb; padding: 6px 8px; border-radius: 4px; }
+    .image-upload-label { font-size: 0.85rem; color: var(--color-text-secondary); }
+    .image-upload-warning { font-size: 0.78rem; color: var(--color-warning-text); background: var(--color-warning-bg); padding: 6px 8px; border-radius: 6px; }
 
     /* ---- ticket 09：文章下方圖片縮圖 ---- */
     .article-images {
@@ -645,9 +747,9 @@
       width: 120px;
       height: 120px;
       object-fit: contain; /* 完整顯示不裁切；cover 無論裁切錨點放哪都可能裁掉主體，改用 contain 保證縮圖看得到完整內容 */
-      background-color: #f1f5f9; /* 非正方形圖片的留白區域，跟站內其他中性色一致 */
-      border-radius: 6px;
-      border: 1px solid #e2e8f0;
+      background-color: var(--color-surface-muted); /* 非正方形圖片的留白區域，跟站內其他中性色一致 */
+      border-radius: 8px;
+      border: 1px solid var(--color-border);
       cursor: pointer;
     }
 
@@ -666,7 +768,7 @@
     .lightbox-overlay img {
       max-width: 100%;
       max-height: 100%;
-      border-radius: 4px;
+      border-radius: 6px;
       cursor: pointer;
     }
     .lightbox-close {
@@ -694,7 +796,7 @@
       left: 50%;
       bottom: 24px;
       transform: translateX(-50%) translateY(12px);
-      background: rgba(30, 41, 59, 0.92);
+      background: rgba(48, 45, 38, 0.92);
       color: #fff;
       padding: 10px 18px;
       border-radius: 20px;
@@ -705,14 +807,14 @@
       pointer-events: none;
       max-width: 85vw;
       text-align: center;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+      box-shadow: 0 4px 12px rgba(var(--shadow-rgb), 0.18);
     }
     .app-toast.show {
       opacity: 1;
       transform: translateX(-50%) translateY(0);
     }
     .app-toast.error {
-      background: rgba(185, 28, 28, 0.94);
+      background: rgba(179, 73, 46, 0.94);
     }
 
     /* ---- 通用確認彈窗（confirmPopup）：取代 confirm()，理由同上方 app-toast 的
@@ -728,14 +830,14 @@
       padding: 8px;
     }
     button.btn-danger {
-      background-color: #dc2626;
+      background-color: var(--color-danger);
       color: #fff;
       border: none;
-      border-radius: 4px;
+      border-radius: 6px;
       cursor: pointer;
       font-weight: 500;
     }
-    button.btn-danger:hover { background-color: #b91c1c; }
+    button.btn-danger:hover { background-color: var(--color-danger-hover); }
 
     /* ---- 修正圖片選擇框排版 ---- */
     .edit-image-slots {
@@ -758,20 +860,32 @@
       aspect-ratio: 1 / 1; /* 維持正方形 */
       height: auto;
       object-fit: contain; /* 跟 .article-images img 一致：完整顯示不裁切，避免預覽跟實際上傳內容不一致 */
-      background-color: #f1f5f9;
-      border-radius: 6px;
-      border: 1px solid #e2e8f0;
+      background-color: var(--color-surface-muted);
+      border-radius: 8px;
+      border: 1px solid var(--color-border);
       box-sizing: border-box;
     }
     .edit-image-slot input[type="file"] {
       width: 100%; /* 寬度跟隨容器 */
       aspect-ratio: 1 / 1; /* 跟已選圖片的格子一致，維持正方形，避免空格/已選格高度不一致 */
       height: auto;
-      border: 1px dashed #cbd5e1;
-      border-radius: 6px;
+      border: 1px dashed var(--color-border-strong);
+      border-radius: 8px;
       font-size: 0.7rem;
       padding: 2px;
       box-sizing: border-box;
+    }
+    /* 圖片排序按鈕（ticket 03）：跟既有的移除按鈕同一排，slot 很窄（選很多張
+       圖片時）也不會被截斷，允許換行 */
+    .edit-image-slot-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 3px;
+      justify-content: center;
+    }
+    .edit-image-slot-actions button:disabled {
+      opacity: 0.4;
+      cursor: default;
     }
   </style>
 </head>
@@ -803,6 +917,15 @@
         <button type="button" class="board-list-btn" onclick="openBoardListPopup()" title="看板列表">📋 看板列表</button>
       </div>
 
+      <!-- 看板內搜尋（ticket 04）：常駐輸入框，Enter 或按鈕才觸發，不做
+           即時邊打邊搜。優先比對 boardBulkCache 裡已載入的資料，零額外
+           試算表讀取；範圍固定是目前所在看板，不做跨看板搜尋。 -->
+      <div class="board-search-bar" id="boardSearchBar">
+        <input type="text" id="boardSearchInput" placeholder="🔍 搜尋這個看板的文章/回覆..."
+          onkeydown="if (event.key === 'Enter') runSearch_()" />
+        <button type="button" class="secondary" onclick="runSearch_()">搜尋</button>
+      </div>
+
       <!-- 跳頁 bar：只有看板文章數超過一頁才會顯示（見 renderPagerBar），放在列表
            正上方而不是像「載入更早的文章」那樣放在清單最下面，是因為文章一多，
            使用者不太可能願意先滑到底才找到跳頁入口 -->
@@ -810,6 +933,14 @@
         <button type="button" class="pager-arrow-btn" id="pagerPrevBtn" onclick="pagerGoRelative(-1)" title="回到較新的一頁">◀</button>
         <button type="button" class="pager-page-indicator" id="pagerPageIndicator" onclick="openPageJumpPopup()"></button>
         <button type="button" class="pager-arrow-btn" id="pagerNextBtn" onclick="pagerGoRelative(1)" title="翻到較舊的一頁">▶</button>
+      </div>
+
+      <!-- 搜尋結果狀態列（ticket 04）：搜尋模式時取代上面的跳頁 bar，
+           搜尋模式跟跳頁是互斥的兩種列表檢視方式 -->
+      <div class="board-search-status-bar" id="boardSearchStatusBar" style="display:none;">
+        <span id="searchResultCount"></span>
+        <button type="button" class="secondary" id="searchLoadMoreBtn" style="display:none;" onclick="loadMoreArticles(currentBoardId)">載入更早的文章再搜一次</button>
+        <button type="button" class="secondary" onclick="clearSearch_()">✕ 清除搜尋</button>
       </div>
 
       <!-- 文章標題列表 (單行高密度) -->
@@ -884,10 +1015,10 @@
         <button type="button" class="board-list-popup-close" onclick="closePageJumpPopup()">✕</button>
       </div>
       <div class="board-list-popup-body" style="padding: 14px 16px; display: flex; flex-direction: column; gap: 10px;">
-        <div id="pageJumpHint" style="font-size: 0.85rem; color: #64748b;"></div>
+        <div id="pageJumpHint" style="font-size: 0.85rem; color: var(--color-text-muted);"></div>
         <div style="display: flex; gap: 8px;">
           <input type="number" id="pageJumpInput" min="1" step="1" inputmode="numeric"
-                 style="flex: 1; min-width: 0; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 1rem;"
+                 style="flex: 1; min-width: 0; padding: 8px; border: 1px solid var(--color-border-strong); border-radius: 6px; font-size: 1rem;"
                  onkeydown="if (event.key === 'Enter') submitPageJump()">
           <button type="button" class="btn-primary" onclick="submitPageJump()">跳頁</button>
         </div>
@@ -896,6 +1027,19 @@
           <button type="button" class="secondary" style="flex: 1;" onclick="jumpToLastPage()">⏭ 跳到最早</button>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- @提及輪 ticket 06：登入時的提及通知彈窗，沿用同一套 .board-list-popup
+       樣式。只在登入成功後、有非空的 pendingMentions 時才會被打開（見
+       showPendingMentionsModalIfAny_），內容全部由 JS 動態產生。 -->
+  <div class="board-list-popup" id="pendingMentionsPopup" onclick="if (event.target === this) closePendingMentionsPopup()">
+    <div class="board-list-popup-content">
+      <div class="board-list-popup-header">
+        <h3>💬 有人提到你</h3>
+        <button type="button" class="board-list-popup-close" onclick="closePendingMentionsPopup()">✕</button>
+      </div>
+      <div class="board-list-popup-body" id="pendingMentionsPopupBody"></div>
     </div>
   </div>
 
@@ -910,9 +1054,9 @@
         <button type="button" class="board-list-popup-close" onclick="closeShareLinkPopup()">✕</button>
       </div>
       <div class="board-list-popup-body" style="padding: 14px 16px; display: flex; flex-direction: column; gap: 10px;">
-        <div style="font-size: 0.85rem; color: #64748b;">沒有觀看權限的人打開會看不到內容</div>
+        <div style="font-size: 0.85rem; color: var(--color-text-muted);">沒有觀看權限的人打開會看不到內容</div>
         <input type="text" id="shareLinkInput" readonly onclick="this.select();"
-               style="padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 0.85rem; color: #1e293b;">
+               style="padding: 8px; border: 1px solid var(--color-border-strong); border-radius: 6px; font-size: 0.85rem; color: var(--color-text);">
         <button type="button" class="btn-primary" onclick="copyShareLinkFromPopup()">複製連結</button>
       </div>
     </div>
@@ -924,7 +1068,7 @@
   <div class="board-list-popup" id="confirmPopup" onclick="if (event.target === this) closeConfirmPopup()">
     <div class="board-list-popup-content" style="max-width: 320px;">
       <div class="board-list-popup-body" style="padding: 20px 16px 16px;">
-        <div id="confirmPopupMessage" style="font-size: 0.95rem; color: #1e293b; margin-bottom: 4px;"></div>
+        <div id="confirmPopupMessage" style="font-size: 0.95rem; color: var(--color-text); margin-bottom: 4px;"></div>
         <div class="confirm-popup-actions">
           <button type="button" class="secondary" onclick="closeConfirmPopup()">取消</button>
           <button type="button" class="btn-danger" onclick="handleConfirmPopupYes()">確定</button>
@@ -945,7 +1089,7 @@
   </div>
 
   <!-- ticket 10：圖片燈箱 -->
-  <div class="lightbox-overlay" id="lightboxOverlay" onclick="closeLightbox()">
+  <div class="lightbox-overlay" id="lightboxOverlay">
     <button type="button" class="lightbox-close" onclick="closeLightbox()">✕</button>
     <img id="lightboxImage" src="" alt="放大圖片" />
   </div>
@@ -986,6 +1130,27 @@
     var currentBoardId = '';
     var currentArticleId = '';
     var allBoards = []; // ticket 06：loadBoards() 存一份在這裡，看板列表彈窗直接複用，不用另外查詢
+
+    // @提及輪 ticket 06：handleLogin 收到 res.pendingMentions 後先暫存在這裡，
+    // 真正顯示 modal 的時機延後到 loadBoards() 的資料真的回來、allBoards 已經
+    // 填好、boardSelect 下拉選單選項也渲染完成之後——這樣使用者點 modal 裡任
+    // 一項要切換看板時，selectBoardFromPopup 依賴的那些前置狀態都已經穩定。
+    // showPendingMentionsModalIfAny_ 讀取後立刻清空，確保這份清單只顯示這
+    // 一次（重整頁面沿用舊 token 走 checkUserStatus 那條路，根本不會有值）。
+    var pendingMentionsToShow_ = null;
+
+    // 未讀文章/新回覆徽章（ticket 01）：allBoards 裡每個看板物件已經帶了
+    // lastSeenAt（getBoardsFromToken 頁面載入時給的，整個 session 期間不會
+    // 再變），呼叫 getBoardBulkFromToken 時原封不動當參數傳回去即可。
+    function getBoardLastSeenAt_(boardId) {
+      var board = allBoards.find(function (b) { return b.boardId === boardId; });
+      return (board && board.lastSeenAt) || '';
+    }
+
+    // 未讀文章/新回覆徽章（ticket 01）：只存在瀏覽器記憶體，純粹「這個 session
+    // 開過這篇了，不要再顯示徽章」的本地標記，不會寫回伺服器、也不影響
+    // lastSeenBoards 本身；離開頁面重整就會消失，這是預期行為。
+    var locallyReadArticleIds_ = new Set();
     var lastArticleDetail = null;   // 暫存目前顯示中的文章資料，編輯模式切換時不用重打一次 RPC
     var isEditingArticle = false;
     var editImageList = []; // 圖片張數突破：編輯文章時暫存的圖片清單狀態，原本是固定 3 格
@@ -1151,6 +1316,50 @@
       document.getElementById('boardSelect').value = boardId;
       onBoardChange();
       closeBoardListPopup();
+    }
+
+    // ---- @提及輪 ticket 06：登入時的提及通知彈窗 ----
+    function showPendingMentionsModalIfAny_() {
+      var mentions = pendingMentionsToShow_;
+      pendingMentionsToShow_ = null; // 只顯示這一次，不管使用者接下來有沒有點開來看
+      if (!mentions || mentions.length === 0) return;
+
+      var body = document.getElementById('pendingMentionsPopupBody');
+      body.innerHTML = '';
+      mentions.forEach(function(m) {
+        // boardId 轉看板名稱：用前端已經有的 allBoards 查，不為了取名稱多讀一次
+        // 試算表（跟 mentions.js 的 buildMentionEntry_ 沒有存 boardName 是同一個
+        // 設計決策）。萬一找不到（例如寫入之後、顯示之前，這個看板的權限被收回
+        // 了），退回直接顯示 boardId 本身，不讓整個項目顯示空白。
+        var board = allBoards.find(function(b) { return b.boardId === m.boardId; });
+        var boardName = board ? board.boardName : m.boardId;
+
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'board-list-popup-item';
+        btn.onclick = function() { openMentionedArticle_(m.boardId, m.articleId); };
+        btn.innerHTML = '<div class="board-name">' + escapeHtml(m.articleTitle) + '</div>' +
+          '<div class="board-desc">' + escapeHtml(boardName) + ' · ' + escapeHtml(m.mentionedBy) + ' 提到你 · ' + escapeHtml(m.createdAt) + '</div>';
+        body.appendChild(btn);
+      });
+
+      document.getElementById('pendingMentionsPopup').classList.add('open');
+    }
+
+    function closePendingMentionsPopup() {
+      document.getElementById('pendingMentionsPopup').classList.remove('open');
+    }
+
+    // 點某一則提及：關掉彈窗、切到該看板，重用既有的深連結開文章機制——
+    // loadArticles 的資料真的回來之後，openDeepLinkedArticleIfPending 會自動
+    // 開這篇（跟分享連結打開頁面時是同一條路徑，不是另外寫一套）。故意不
+    // 呼叫 selectBoardFromPopup：那支函式會連帶關掉 boardListPopup（看板列表
+    // 彈窗），跟這裡要關的 pendingMentionsPopup 是兩個不同的彈窗，語意對不上。
+    function openMentionedArticle_(boardId, articleId) {
+      closePendingMentionsPopup();
+      bootstrapData.articleId = articleId;
+      document.getElementById('boardSelect').value = boardId;
+      onBoardChange();
     }
 
     // ticket 08：排行榜彈窗
@@ -1347,6 +1556,13 @@
         // 真的載回來之後才觸發（見 openDeepLinkedArticleIfPending），不能像以前一樣
         // 在這裡就直接呼叫——文章詳情不再各自獨立呼叫伺服器，要等所屬看板的批量
         // 資料進了本地快取才有東西可以渲染。
+
+        // @提及輪 ticket 06：放在這裡（正常流程都跑完之後），boardSelect 下拉
+        // 選單選項、allBoards 都已經穩定，modal 裡任一項需要的「切換看板」才
+        // 保證能正確運作。看板數為 0（上面提早 return 的分支）時不會執行到
+        // 這裡——一個看板都看不到的人，就算顯示了 mention 也點不進去，不顯示
+        // 比顯示了卻導覽失敗更合理。
+        showPendingMentionsModalIfAny_();
       }).getBoardsFromToken(currentToken);
     }
 
@@ -1355,6 +1571,11 @@
       currentBoardId = document.getElementById('boardSelect').value;
       currentArticleId = '';
       document.getElementById('rightPanel').innerHTML = '<div class="placeholder-msg">👈 請從左側點選文章查看內容</div>';
+      // 看板內搜尋（ticket 04）：換板後上一個看板打的關鍵字沒有意義了，這裡
+      // 清空輸入框；isSearching_ 本身會在 loadArticles 觸發的
+      // renderArticleListFromCache 裡自動歸零，不用在這裡重複處理。
+      var searchInput = document.getElementById('boardSearchInput');
+      if (searchInput) searchInput.value = '';
       loadArticles(currentBoardId);
       markBoardEntered(currentBoardId);
     }
@@ -1376,9 +1597,48 @@
     // 的既有計算結果（不是額外的讀取或運算，見 boardBulk.js）。
     var boardBulkCache = {};
 
+    // 看板內搜尋（ticket 04）：isSearching_ 為 true 時，#articleList 顯示的是
+    // 搜尋結果、不是一般列表；renderArticleListFromCache（一般列表渲染）開頭
+    // 會順手把這個旗標歸零，確保「畫面是一般列表」跟「isSearching_ 是 false」
+    // 這兩件事不會走鐘——集中在單一個地方同步，不用在每個會清空搜尋的操作
+    // 各自記得處理。
+    var isSearching_ = false;
+    var currentSearchKeyword_ = '';
+
     // 在已載入的所有頁次裡找一篇文章，回傳所在頁次索引與文章物件本身；找不到回傳
     // null。編輯/刪除/回覆的目標文章不一定在 pages[0]（ticket 06 之後翻頁載入的舊
     // 文章一樣可以被編輯），所以要跨頁找，不能只看第一頁。
+    // bug-fix 輪（第八輪之後）：非同步操作與「使用者可能已經點去別的地方」的
+    // 競態問題——送出回覆/發文/編輯/刪文之後，在等伺服器回應（或甚至只是等
+    // showConfirm 的確認彈窗被點掉）的這段空檔，使用者完全可以點開另一篇文章、
+    // 甚至切到另一個看板。等到 google.script.run 的 success callback 真的執行
+    // 時，如果 callback 內容用的是「當下」讀到的 currentArticleId/currentBoardId
+    // 全域變數，讀到的很可能已經是使用者這段期間點開的新文章/新看板，而不是
+    // 這次操作真正對應的那個——結果就是回應被錯誤地套用到畫面上「現在剛好顯示
+    // 的東西」，看起來像是回覆跑錯文章、或發文跑錯看板，但實際送給伺服器的
+    // RPC 呼叫本身用的是函式參數求值當下（同步、還沒被使用者中途切換影響到）
+    // 的值，所以資料庫寫入其實一直是對的——重新整理頁面後看到的就是正確結果。
+    // 這個模組確立的修法原則、之後任何新的 google.script.run 呼叫都要延續：
+    //   1. 呼叫 google.script.run 之前，先把「這次操作對應哪個看板/哪篇文章」
+    //      存進區域變數（targetBoardId/targetArticleId 這類命名），越早存越好
+    //      （showConfirm 這種還會再插一層非同步確認的，要存在呼叫 showConfirm
+    //      之前，不能存在它的 callback 裡面）。
+    //   2. callback 裡凡是要更新「底層快取資料」（boardBulkCache 本身）的部分，
+    //      一律用第 1 步存的區域變數，不管使用者是否已經切走，快取永遠都要
+    //      正確——這樣使用者之後不管什麼時候點回那篇文章/那個看板，看到的都
+    //      已經是最新資料。
+    //   3. callback 裡凡是要更新「畫面上看得到的東西」（右側詳情面板、左側
+    //      文章列表 DOM）的部分，一律先用下面 isViewingArticle_/isViewingBoard_
+    //      比對「現在」的 currentArticleId/currentBoardId 跟第 1 步存的目標值
+    //      是否還相同，不同就靜默跳過畫面更新（快取已經在第 2 步更新好了，
+    //      不需要現在就打斷使用者、把畫面拉回去）。
+    function isViewingArticle_(articleId) {
+      return currentArticleId === articleId;
+    }
+    function isViewingBoard_(boardId) {
+      return currentBoardId === boardId;
+    }
+
     function findCachedArticleLocation_(boardId, articleId) {
       var entry = boardBulkCache[boardId];
       if (!entry) return null;
@@ -1398,9 +1658,57 @@
       return entry ? entry.pages.reduce(function(acc, page) { return acc.concat(page.articles); }, []) : [];
     }
 
+    // 看板內搜尋（ticket 04）：跟 currentBoardArticlesFlat_ 同樣道理，把已載入
+    // 每一頁各自的 repliesByArticleId（key 是 articleId）合併成一份。文章不會
+    // 同時出現在兩頁，key 之間不會互相覆蓋，用 Object.assign 直接合併即可。
+    function currentBoardRepliesFlat_(boardId) {
+      var entry = boardBulkCache[boardId];
+      if (!entry) return {};
+      return entry.pages.reduce(function(acc, page) {
+        return Object.assign(acc, page.repliesByArticleId);
+      }, {});
+    }
+
+    // 從 renderArticleListFromCache 抽出來的共用小函式：把一份文章陣列畫成
+    // #articleList 底下的 .article-item 清單。一般列表跟搜尋結果都呼叫這個
+    // 函式，確保未讀徽章、目前選取中的反藍、點擊開文章這幾件事兩邊行為完全
+    // 一致，不會各自維護一份、之後改一邊忘了改另一邊。
+    function renderArticleItemsIntoList_(listContainer, articles) {
+      listContainer.innerHTML = '';
+      articles.forEach(function(item) {
+        var div = document.createElement('div');
+        div.className = 'article-item' + (item.articleId === currentArticleId ? ' active' : '');
+        div.onclick = function() {
+          selectArticle(item.articleId, div);
+        };
+        // 未讀文章/新回覆徽章（ticket 01）：伺服器算出來的 isNew/hasNewReply
+        // 之外，還要看這篇這個 session 有沒有已經被本地標記成「開過了」——
+        // 開過就不再顯示，不管伺服器那份資料有沒有機會重新整理。
+        var alreadyOpenedThisSession = locallyReadArticleIds_.has(item.articleId);
+        var showNewArticleBadge = item.isNew && !alreadyOpenedThisSession;
+        var showNewReplyBadge = item.hasNewReply && !alreadyOpenedThisSession;
+        div.innerHTML = `
+          <div class="title" title="${escapeHtml(item.title)}">${showNewArticleBadge ? '<span class="badge-new">N</span>' : ''}${escapeHtml(item.title)}</div>
+          <div class="meta">
+            <span>${escapeHtml(item.author)}</span>
+            <span>${showNewReplyBadge ? '<span class="badge-new">N</span>' : ''}💬${item.replyCount || 0}</span>
+          </div>
+        `;
+        listContainer.appendChild(div);
+      });
+    }
+
     function renderArticleListFromCache(boardId) {
       var listContainer = document.getElementById('articleList');
       var articles = currentBoardArticlesFlat_(boardId);
+
+      // 看板內搜尋（ticket 04）：這是「回到一般列表」唯一的進入點，順手把
+      // 搜尋狀態歸零、搜尋狀態列藏起來、跳頁 bar 恢復顯示的資格——集中在
+      // 這裡做，不用在每個會離開搜尋模式的操作各自記得清。
+      isSearching_ = false;
+      currentSearchKeyword_ = '';
+      var searchStatusBar = document.getElementById('boardSearchStatusBar');
+      if (searchStatusBar) searchStatusBar.style.display = 'none';
 
       renderPagerBar(boardId);
 
@@ -1409,22 +1717,7 @@
         return;
       }
 
-      listContainer.innerHTML = '';
-      articles.forEach(function(item) {
-        var div = document.createElement('div');
-        div.className = 'article-item' + (item.articleId === currentArticleId ? ' active' : '');
-        div.onclick = function() {
-          selectArticle(item.articleId, div);
-        };
-        div.innerHTML = `
-          <div class="title" title="${escapeHtml(item.title)}">${escapeHtml(item.title)}</div>
-          <div class="meta">
-            <span>${escapeHtml(item.author)}</span>
-            <span>💬${item.replyCount || 0}</span>
-          </div>
-        `;
-        listContainer.appendChild(div);
-      });
+      renderArticleItemsIntoList_(listContainer, articles);
 
       // 效能優化 ticket 06：hasMore 為 true 時,列表最下方加一顆「載入更早的文章」
       // 按鈕。沒有更多可載入（包含這個看板文章數本來就沒超過批次上限，第一批的
@@ -1440,6 +1733,79 @@
       }
     }
 
+    // ---- 看板內搜尋（ticket 04）----
+    // 比對規則：不分大小寫、純子字串比對（跟 @提及輪 ticket 05 的偵測邏輯
+    // 同樣走「簡單字串比對」路線，不做分詞或模糊比對）。標題、內文、底下
+    // 任一則回覆的內容，符合其中之一就算命中。
+    function matchesSearchKeyword_(article, repliesForArticle, keywordLower) {
+      if ((article.title || '').toLowerCase().indexOf(keywordLower) !== -1) return true;
+      if ((article.content || '').toLowerCase().indexOf(keywordLower) !== -1) return true;
+      return (repliesForArticle || []).some(function(reply) {
+        return (reply.content || '').toLowerCase().indexOf(keywordLower) !== -1;
+      });
+    }
+
+    function runSearch_() {
+      var input = document.getElementById('boardSearchInput');
+      var keyword = (input.value || '').trim();
+      if (!keyword) {
+        clearSearch_();
+        return;
+      }
+      isSearching_ = true;
+      currentSearchKeyword_ = keyword;
+      renderSearchResults_(currentBoardId);
+    }
+
+    function renderSearchResults_(boardId) {
+      var listContainer = document.getElementById('articleList');
+      var articles = currentBoardArticlesFlat_(boardId);
+      var repliesByArticleId = currentBoardRepliesFlat_(boardId);
+      var keywordLower = currentSearchKeyword_.toLowerCase();
+
+      var matched = articles.filter(function(article) {
+        return matchesSearchKeyword_(article, repliesByArticleId[article.articleId], keywordLower);
+      });
+
+      // 搜尋模式跟跳頁是互斥的兩種列表檢視方式，藏起跳頁 bar、換成搜尋狀態列
+      document.getElementById('articlePagerBar').style.display = 'none';
+      var statusBar = document.getElementById('boardSearchStatusBar');
+      statusBar.style.display = 'flex';
+      document.getElementById('searchResultCount').textContent =
+        matched.length === 0 ? '沒有符合的結果' : ('找到 ' + matched.length + ' 篇符合的文章');
+
+      // 這個看板還有更早、尚未載入的文章時，讓使用者可以主動擴大範圍——
+      // 不自動觸發，重用既有的 loadMoreArticles，它成功後看到 isSearching_
+      // 是 true 就會自動重新執行一次搜尋（見下方 loadMoreArticles 的修改）。
+      var entry = boardBulkCache[boardId];
+      var loadMoreBtn = document.getElementById('searchLoadMoreBtn');
+      loadMoreBtn.style.display = (entry && entry.hasMore) ? 'inline-block' : 'none';
+
+      if (matched.length === 0) {
+        listContainer.innerHTML = '<div class="placeholder-msg" style="margin-top: 40px; font-size: 0.9rem;">沒有符合「' + escapeHtml(currentSearchKeyword_) + '」的文章</div>';
+        return;
+      }
+      renderArticleItemsIntoList_(listContainer, matched);
+    }
+
+    function clearSearch_() {
+      var input = document.getElementById('boardSearchInput');
+      if (input) input.value = '';
+      // renderArticleListFromCache 開頭會把 isSearching_/currentSearchKeyword_
+      // 歸零、搜尋狀態列藏起來，這裡不用重複做
+      renderArticleListFromCache(currentBoardId);
+
+      // bug-fix 輪：從搜尋結果點進一篇文章、再清除搜尋回到總表時，把那篇文章
+      // 捲動到看得到的位置。renderArticleItemsIntoList_ 本來就會依 currentArticleId
+      // 幫符合的項目加上 .active（反藍），這裡缺的只是捲動——列表整個重新渲染過，
+      // 原本的捲動位置對這篇文章來說已經沒有意義，所以不用像上下鍵導覽那樣只在
+      // 「真的被裁到看不見」時才捲（block: 'nearest'），而是直接捲到清單可視範圍
+      // 正中間，確保使用者不用自己在長列表裡瞇眼找。找不到（例如目前沒有開啟中
+      // 的文章）就靜默略過，不報錯。
+      var activeItem = document.querySelector('#articleList .article-item.active');
+      if (activeItem) activeItem.scrollIntoView({ block: 'center' });
+    }
+
     // 點「載入更早的文章」：以下一個還沒讀過的頁次（entry.pages.length，0-based）
     // 呼叫批量端點，成功後把新的一頁 push 進既有陣列——只新增，不覆蓋、不重複
     // 讀取已經在 pages 裡的頁次。這一頁本來就還沒載入過，沒有已知版本值可以帶，
@@ -1452,8 +1818,13 @@
       // 說明），下一頁要接著 baseIndex 往後算，不能只看 entry.pages.length
       var nextPageIndex = entry.baseIndex + entry.pages.length;
 
+      // 看板內搜尋（ticket 04）：一般列表模式的按鈕跟搜尋狀態列的按鈕是兩個不同
+      // 的 DOM 元素，同一時間只有一個會真的畫在畫面上，另一個 getElementById
+      // 會拿到 null，下面用 if (btn) 保護，兩種模式都能有「載入中」的視覺回饋。
       var btn = document.getElementById('loadMoreArticlesBtn');
       if (btn) { btn.disabled = true; btn.textContent = '載入中...'; }
+      var searchBtn = document.getElementById('searchLoadMoreBtn');
+      if (searchBtn) { searchBtn.disabled = true; searchBtn.textContent = '載入中...'; }
 
       google.script.run.withSuccessHandler(function(json) {
         var res = {};
@@ -1466,11 +1837,19 @@
         if (typeof res.totalCount === 'number') entry.totalCount = res.totalCount;
         if (typeof res.pageSize === 'number') entry.pageSize = res.pageSize;
 
-        renderArticleListFromCache(boardId);
+        // 看板內搜尋（ticket 04）：搜尋模式下載入新的一頁，是「留在搜尋模式、
+        // 用擴大後的資料重新搜一次」，不是跳回一般列表——呼叫 renderSearchResults_
+        // 而不是 renderArticleListFromCache（後者會把 isSearching_ 歸零）。
+        if (isSearching_) {
+          renderSearchResults_(boardId);
+        } else {
+          renderArticleListFromCache(boardId);
+        }
       }).withFailureHandler(function(err) {
         if (btn) { btn.disabled = false; btn.textContent = '載入更早的文章'; }
+        if (searchBtn) { searchBtn.disabled = false; searchBtn.textContent = '載入更早的文章再搜一次'; }
         showToast('載入更早的文章失敗，請稍後再試: ' + err.message, 'error');
-      }).getBoardBulkFromToken(currentToken, boardId, nextPageIndex, '');
+      }).getBoardBulkFromToken(currentToken, boardId, nextPageIndex, '', getBoardLastSeenAt_(boardId));
     }
 
     // ---- 跳頁功能 ----
@@ -1569,7 +1948,7 @@
       }).withFailureHandler(function(err) {
         renderArticleListFromCache(boardId); // 退回原本已快取的畫面，不留在「載入中」
         showToast('跳頁失敗，請稍後再試: ' + err.message, 'error');
-      }).getBoardBulkFromToken(currentToken, boardId, targetPageIndex, '');
+      }).getBoardBulkFromToken(currentToken, boardId, targetPageIndex, '', getBoardLastSeenAt_(boardId));
     }
 
     function jumpToLastPage() {
@@ -1651,11 +2030,16 @@
     // 那篇文章旁邊顯示的回覆數徽章（純本地更新，不 bump 看板版本——原因見 ticket 03
     // 「回覆數過期視窗」的取捨說明：只保證自己看到的是準的，別人要等看板版本被
     // 發文/編輯/刪文帶動才會更新）
+    // bug-fix 輪：快取本身（replyCount 數字）不管使用者現在切到哪裡都要更新
+    // 正確；但 renderArticleListFromCache(boardId) 會直接刷新「現在畫面上看得到
+    // 的」#articleList，如果使用者這段期間已經切去別的看板，這裡不能硬刷成
+    // 剛剛那個看板的列表（會把使用者現在正在看的看板列表整個換掉）——用
+    // isViewingBoard_ 擋一下，只有還停在同一個看板時才真的重新渲染畫面。
     function patchArticleListReplyCount(boardId, articleId, delta) {
       var located = findCachedArticleLocation_(boardId, articleId);
       if (!located) return;
       located.article.replyCount = (located.article.replyCount || 0) + delta;
-      renderArticleListFromCache(boardId);
+      if (isViewingBoard_(boardId)) renderArticleListFromCache(boardId);
     }
 
     // 深連結網址帶了 ?article= 時，要等第一頁批量資料真的載回來才能從快取找到那篇
@@ -1709,7 +2093,7 @@
         };
         renderArticleListFromCache(boardId);
         openDeepLinkedArticleIfPending();
-      }).getBoardBulkFromToken(currentToken, boardId, 0, knownVersion);
+      }).getBoardBulkFromToken(currentToken, boardId, 0, knownVersion, getBoardLastSeenAt_(boardId));
     }
 
     // 5. 折疊/展開發文表單切換
@@ -1730,10 +2114,26 @@
       currentArticleId = articleId;
       isEditingArticle = false;
 
+      // 未讀文章/新回覆徽章（ticket 01）：點開就在本地標記成「這個 session 看過了」，
+      // 並直接把這個節點裡的徽章拿掉——不用整個列表重新渲染。
+      locallyReadArticleIds_.add(articleId);
+      if (elementNode) {
+        elementNode.querySelectorAll('.badge-new').forEach(function (badge) { badge.remove(); });
+      }
+
       // 更新左側高亮顯示
       var items = document.querySelectorAll('.article-item');
       items.forEach(el => el.classList.remove('active'));
-      if (elementNode) elementNode.classList.add('active');
+      if (elementNode) {
+        elementNode.classList.add('active');
+        // 上下鍵／手機上一篇下一篇按鈕切換時，反藍的項目可能已經滾出
+        // article-list-wrapper 的可視範圍外，用 scrollIntoView 把它捲回可
+        // 見範圍。block: 'nearest' 只在真的被裁到看不見時才捲動，已經在畫面
+        // 內的情況（例如滑鼠點擊）不會多此一舉地跳位置。scrollIntoView 只會
+        // 捲動最近的可捲動祖先（也就是 article-list-wrapper 本身），不會連帶
+        // 捲動整個頁面。
+        elementNode.scrollIntoView({ block: 'nearest' });
+      }
 
       // 手機版：切換到單畫面「詳情」畫面，並推一筆瀏覽器歷史記錄，
       // 讓實體/手勢返回鍵可以回到列表（見 popstate 監聽）。
@@ -1792,31 +2192,33 @@
     }
 
     // 本人回覆成功後直接本地插入，不重新呼叫伺服器；回覆是「舊到新」排序，
-    // 新的回覆排最後面
-    function patchArticleDetailOnReplyCreate(articleId, version, newReply) {
-      var located = findCachedArticleLocation_(currentBoardId, articleId);
-      if (!located) return false;
-      var page = boardBulkCache[currentBoardId].pages[located.pageIndex];
+    // 新的回覆排最後面。bug-fix 輪：boardId 改成參數（不再讀 currentBoardId
+    // 全域變數，避免使用者切看板期間這支函式解析到錯的看板快取）；回傳值也從
+    // true/false 改成「更新後的 {article, replies}／null」，不在這裡直接寫
+    // lastArticleDetail——是否要同步到看得到的右側面板，交給呼叫端用
+    // isViewingArticle_ 判斷過後再決定（見上方 bug-fix 輪的說明區塊）。
+    function patchArticleDetailOnReplyCreate(boardId, articleId, version, newReply) {
+      var located = findCachedArticleLocation_(boardId, articleId);
+      if (!located) return null;
+      var page = boardBulkCache[boardId].pages[located.pageIndex];
       if (!page.repliesByArticleId[articleId]) page.repliesByArticleId[articleId] = [];
       page.repliesByArticleId[articleId].push(newReply);
       page.version = version;
-      lastArticleDetail = { article: located.article, replies: page.repliesByArticleId[articleId] };
-      return true;
+      return { article: located.article, replies: page.repliesByArticleId[articleId] };
     }
 
-    function patchArticleDetailOnReplyDelete(articleId, version, replyId) {
-      var located = findCachedArticleLocation_(currentBoardId, articleId);
-      if (!located) return false;
-      var page = boardBulkCache[currentBoardId].pages[located.pageIndex];
+    function patchArticleDetailOnReplyDelete(boardId, articleId, version, replyId) {
+      var located = findCachedArticleLocation_(boardId, articleId);
+      if (!located) return null;
+      var page = boardBulkCache[boardId].pages[located.pageIndex];
       page.repliesByArticleId[articleId] = (page.repliesByArticleId[articleId] || []).filter(function(r) { return r.replyId !== replyId; });
       page.version = version;
-      lastArticleDetail = { article: located.article, replies: page.repliesByArticleId[articleId] };
-      return true;
+      return { article: located.article, replies: page.repliesByArticleId[articleId] };
     }
 
-    function patchArticleDetailOnEdit(articleId, version, title, content, editedAt, editedBy, imageUrls) {
-      var located = findCachedArticleLocation_(currentBoardId, articleId);
-      if (!located) return false;
+    function patchArticleDetailOnEdit(boardId, articleId, version, title, content, editedAt, editedBy, imageUrls) {
+      var located = findCachedArticleLocation_(boardId, articleId);
+      if (!located) return null;
       located.article.title = title;
       located.article.content = content;
       located.article.editedAt = editedAt;
@@ -1824,10 +2226,9 @@
       if (imageUrls) {
         located.article.imageUrls = imageUrls;
       }
-      var page = boardBulkCache[currentBoardId].pages[located.pageIndex];
+      var page = boardBulkCache[boardId].pages[located.pageIndex];
       page.version = version;
-      lastArticleDetail = { article: located.article, replies: page.repliesByArticleId[articleId] || [] };
-      return true;
+      return { article: located.article, replies: page.repliesByArticleId[articleId] || [] };
     }
 
     // 6b. 實際組裝右側文章詳情 HTML（含檢視 / 編輯兩種模式）
@@ -2000,23 +2401,24 @@
     // 綁在 #rightPanel 上而不是每次重繪都重建的內部節點——rightPanel 本身
     // 是穩定存在的容器（只有 innerHTML 會變），道理同 wireImageDropZone_
     // 的說明，一次綁定，之後每次重繪依然有效。
+    //
+    // 這三個門檻常數提到外層（不再各自關在 IIFE 裡），因為未讀/新回覆徽章輪
+    // ticket 02 新增的燈箱滑動手勢要重用同一套數值，兩處手感才會一致。
+    // 起點在螢幕最左緣一小段範圍內時，整段手勢直接放行、不攔截：iOS
+    // Safari 從最左緣往右滑是系統「上一頁」手勢，這裡刻意不跟它搶。
+    var EDGE_IGNORE_PX = 24;
+    var SWIPE_MIN_DELTA_X = 60; // 位移門檻：太小的位移視為誤觸/正常點擊，不觸發切換
+    var SWIPE_MAX_OFF_AXIS_RATIO = 0.5; // 縱向位移超過橫向位移的一半，視為在捲動內文，不是要切文章
+
     (function () {
       var rightPanelEl = document.getElementById('rightPanel');
       var touchStartX = null;
       var touchStartY = null;
       var touchStartEdge = false;
 
-      // 起點在螢幕最左緣一小段範圍內時，整段手勢直接放行、不攔截：iOS
-      // Safari 從最左緣往右滑是系統「上一頁」手勢，效果等同「返回列表」，
-      // 這裡刻意不跟它搶，讓使用者原本熟悉的返回手勢維持原樣（見前一輪
-      // 對話對這個邊界情況的討論）。
-      var EDGE_IGNORE_PX = 24;
-      var SWIPE_MIN_DELTA_X = 60; // 位移門檻：太小的位移視為誤觸/正常點擊，不觸發切換
-      var SWIPE_MAX_OFF_AXIS_RATIO = 0.5; // 縱向位移超過橫向位移的一半，視為在捲動內文，不是要切文章
-
       rightPanelEl.addEventListener('touchstart', function (event) {
         if (viewMode !== 'mobile' || navState.screen !== 'detail') return;
-        if (isLightboxOpen_()) return; // 燈箱開著時滑動交給燈箱自己（目前燈箱僅支援點擊/Esc關閉，不會誤觸這裡的邏輯，但仍明確排除）
+        if (isLightboxOpen_()) return; // 燈箱開著時滑動交給燈箱自己的手勢監聽（見下方），不會誤觸這裡的邏輯，但仍明確排除
         var target = event.target;
         if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return; // 在回覆輸入框打字/選字時不要誤觸
         var touch = event.touches[0];
@@ -2050,11 +2452,84 @@
       }, { passive: true });
     })();
 
+    // ---- 未讀/新回覆徽章輪 ticket 02：手機燈箱左右滑動切圖 ----
+    // 跟上面的文章切換手勢是完全獨立的手勢區塊（不同 DOM 目標、不同觸發條件），
+    // 但共用同一套門檻常數（EDGE_IGNORE_PX/SWIPE_MIN_DELTA_X/SWIPE_MAX_OFF_AXIS_RATIO，
+    // 見上方宣告處），確保兩處滑動手感一致、以後要調整門檻只要改一個地方。
+    // 方向對應 navigateLightbox_ 既有的桌面鍵盤慣例（ArrowRight=+1=下一張,
+    // ArrowLeft=-1=上一張）：左滑＝下一張、右滑＝上一張。邊界（第一張再右滑/
+    // 最後一張再左滑）完全不動作，直接沿用 navigateLightbox_ 既有的邊界判斷，
+    // 這裡不用另外處理。
+    (function () {
+      var lightboxOverlayEl = document.getElementById('lightboxOverlay');
+      var touchStartX = null;
+      var touchStartY = null;
+      var touchStartEdge = false;
+      // 一次成功辨識出的滑動手勢，接下來瀏覽器可能補發的合成 click 事件要
+      // 忽略，不然會被下面統一處理的 click handler 誤判成「點背景關閉燈箱」。
+      // 旗標在下一個 tick 用 setTimeout 保底清除，避免萬一沒有真的補發
+      // click（不同瀏覽器行為不一致）時旗標卡住不歸位、誤吃下一次正常點擊。
+      var justSwiped = false;
+
+      lightboxOverlayEl.addEventListener('touchstart', function (event) {
+        var touch = event.touches[0];
+        touchStartX = touch.clientX;
+        touchStartY = touch.clientY;
+        touchStartEdge = touch.clientX <= EDGE_IGNORE_PX; // 燈箱是滿版 overlay，左緣一樣要讓給 iOS 返回手勢
+      }, { passive: true });
+
+      lightboxOverlayEl.addEventListener('touchend', function (event) {
+        if (touchStartX === null || touchStartEdge) {
+          touchStartX = null;
+          touchStartY = null;
+          touchStartEdge = false;
+          return;
+        }
+        var touch = event.changedTouches[0];
+        var deltaX = touch.clientX - touchStartX;
+        var deltaY = touch.clientY - touchStartY;
+        touchStartX = null;
+        touchStartY = null;
+        touchStartEdge = false;
+
+        if (Math.abs(deltaX) < SWIPE_MIN_DELTA_X) return;
+        if (Math.abs(deltaY) > Math.abs(deltaX) * SWIPE_MAX_OFF_AXIS_RATIO) return;
+
+        justSwiped = true;
+        setTimeout(function () { justSwiped = false; }, 0);
+
+        navigateLightbox_(deltaX < 0 ? 1 : -1);
+      }, { passive: true });
+
+      // 原本 overlay 是用 inline onclick="closeLightbox()"（見 Index.html
+      // 這個節點的標記），改成這裡統一處理，理由：inline onclick 是在 DOM
+      // 解析當下就註冊的，時間點一定比這支 script 裡任何 addEventListener
+      // 呼叫還早，如果兩個監聽器分別用 capture/bubble 卡順序去猜誰先執行，遇到
+      // 「點擊座標剛好就是 overlay 本身（不是內部的 img）」時順序其實無法
+      // 保證一定是 capture 那個先跑——與其賭事件流順序，不如讓「要不要真的
+      // 關閉燈箱」這個判斷只在單一個 handler 裡做完，順便也保留原本「點擊
+      // 背景（不管是點在 img 上還是 overlay 空白處）就關閉」的行為：一般點
+      // 擊（deltaX 太小、沒有觸發 justSwiped）沿用原本 tap-to-close，只有
+      // 真的辨識出滑動手勢時才略過這一次。
+      lightboxOverlayEl.addEventListener('click', function (event) {
+        if (justSwiped) {
+          justSwiped = false;
+          return;
+        }
+        closeLightbox();
+      });
+    })();
+
     // 圖片張數突破：編輯文章時的圖片管理——不定長清單，每項是既有圖片
     // （可移除）或新選的圖片（可移除），清單後接一個新增圖片的控制項
     function renderEditImageSlots() {
-      return renderImageListHtml(editImageList, 'addEditImage', 'removeEditImage') +
+      return renderImageListHtml(editImageList, 'addEditImage', 'removeEditImage', 'moveEditImage') +
         '<div class="image-upload-warning">⚠️ 圖片連結為公開分享連結（知道連結就能看），請勿上傳含敏感內容的圖片</div>';
+    }
+
+    function moveEditImage(index, direction) {
+      moveImageInList_(editImageList, index, direction);
+      renderArticleDetail(lastArticleDetail);
     }
 
     function removeEditImage(index) {
@@ -2080,11 +2555,11 @@
       if (isEditingArticle) {
         headerHtml = `
           <input type="text" id="editArticleTitle" value="${escapeHtml(article.title)}"
-            style="width:100%; font-size:1.3rem; font-weight:bold; margin-bottom:8px; padding:6px; border:1px solid #cbd5e1; border-radius:4px;">
-          <textarea id="editArticleContent" style="width:100%; height:140px; padding:8px; border:1px solid #cbd5e1; border-radius:4px; margin-bottom:8px;">${escapeHtml(article.content)}</textarea>
+            style="width:100%; font-size:1.3rem; font-weight:bold; margin-bottom:8px; padding:6px; border:1px solid var(--color-border-strong); border-radius:6px;">
+          <textarea id="editArticleContent" style="width:100%; height:140px; padding:8px; border:1px solid var(--color-border-strong); border-radius:6px; margin-bottom:8px;">${escapeHtml(article.content)}</textarea>
           ${renderEditImageSlots()}
           <div style="display:flex; gap:8px; margin-top:8px;">
-            <button class="btn-primary" id="btnSaveEditArticle" onclick="handleSaveEditArticle('${article.articleId}')">儲存</button>
+            <button class="btn-primary" id="btnSaveEditArticle">儲存</button>
             <button class="secondary" onclick="handleCancelEditArticle()">取消</button>
           </div>
         `;
@@ -2093,10 +2568,10 @@
           <div class="header-title" style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
             <span>${escapeHtml(article.title)}</span>
             <div style="display:flex; gap:6px; flex-shrink:0;">
-              <button class="secondary" style="font-size:0.75rem; padding:4px 10px;" onclick="handleShareArticle('${article.boardId}','${article.articleId}')">🔗 分享</button>
+              <button class="secondary" id="btnShareArticle" style="font-size:0.75rem; padding:4px 10px;">🔗 分享</button>
               ${isMobileLineCapable_() ? `<button class="secondary" style="font-size:0.75rem; padding:4px 10px;" onclick="handleShareToLine()">💬 LINE</button>` : ''}
               ${canManageArticle ? `<button class="secondary" style="font-size:0.75rem; padding:4px 10px;" onclick="handleStartEditArticle()">✏️ 編輯</button>` : ''}
-              ${canManageArticle ? `<button class="secondary" style="font-size:0.75rem; padding:4px 10px;" onclick="handleDeleteArticle('${article.articleId}')">🗑 刪除</button>` : ''}
+              ${canManageArticle ? `<button class="secondary" id="btnDeleteArticle" style="font-size:0.75rem; padding:4px 10px;">🗑 刪除</button>` : ''}
             </div>
           </div>
           <div class="header-meta">
@@ -2132,7 +2607,7 @@
       `;
 
       if (replies.length === 0) {
-        html += '<div style="color: #94a3b8; font-size: 0.9rem;">尚無回覆，成為第一個留言的人吧！</div>';
+        html += '<div style="color: var(--color-text-faint); font-size: 0.9rem;">尚無回覆，成為第一個留言的人吧！</div>';
       } else {
         replies.forEach(function(r) {
           // 權限系統 ticket 07：canDeleteReply 現在要逐則回覆判斷（不再是整個
@@ -2143,7 +2618,7 @@
             <div class="reply-item">
               <div class="reply-meta" style="display:flex; justify-content:space-between; align-items:center;">
                 <span>${escapeHtml(r.author)} • ${escapeHtml(r.createdAt)}</span>
-                ${canDeleteReply ? `<span style="cursor:pointer; color:#dc2626; font-size:0.75rem;" onclick="handleDeleteReply('${article.articleId}','${r.replyId}')">🗑 刪除</span>` : ''}
+                ${canDeleteReply ? `<span id="btnDeleteReply_${escapeHtml(r.replyId)}" style="cursor:pointer; color:var(--color-danger); font-size:0.75rem;">🗑 刪除</span>` : ''}
               </div>
               <div class="reply-content">${escapeHtml(r.content)}</div>
             </div>
@@ -2165,6 +2640,26 @@
       `;
 
       rightPanel.innerHTML = html;
+
+      // 安全性審查 L-1 修復：上面這幾顆按鈕原本用樣板字串把 articleId/boardId/
+      // replyId 直接接進 onclick="..." 屬性字串裡（單引號 JS 字串常值），
+      // 理論上如果其中任何一個值含有單引號，就可能斷開字串邊界注入任意 JS。
+      // articleId/replyId 是伺服器端 Utilities.getUuid() 產生、boardId 是
+      // 管理者直接在試算表手動輸入（沒有任何網頁介面可以建立看板）——目前的
+      // 值都不會真的觸發這個問題，但跟看板清單彈窗/提及通知彈窗/文章列表
+      // 項目一致，這裡改成事件監聽器直接閉包帶入真正的 JS 值、不再經過字串
+      // 插值，把這個模式徹底收斂掉，不留下「這裡剛好安全但寫法不一致」的
+      // 痕跡（見審查報告 L-1）。
+      var saveBtn = document.getElementById('btnSaveEditArticle');
+      if (saveBtn) saveBtn.onclick = function() { handleSaveEditArticle(article.articleId); };
+      var shareBtn = document.getElementById('btnShareArticle');
+      if (shareBtn) shareBtn.onclick = function() { handleShareArticle(article.boardId, article.articleId); };
+      var deleteArticleBtn = document.getElementById('btnDeleteArticle');
+      if (deleteArticleBtn) deleteArticleBtn.onclick = function() { handleDeleteArticle(article.articleId); };
+      replies.forEach(function(r) {
+        var deleteReplyBtn = document.getElementById('btnDeleteReply_' + r.replyId);
+        if (deleteReplyBtn) deleteReplyBtn.onclick = function() { handleDeleteReply(article.articleId, r.replyId); };
+      });
     }
 
     // 7. 動作處理：登入 / 註冊 / 登出 / 發文 / 回覆
@@ -2180,6 +2675,8 @@
           currentLastLoginAt = res.lastLoginAt || '';
           sessionStorage.setItem('bbs_login_count', String(currentLoginCount));
           sessionStorage.setItem('bbs_last_login_at', currentLastLoginAt);
+          // @提及輪 ticket 06：先暫存，等 loadBoards() 資料真的回來才顯示（見上方變數宣告的說明）
+          pendingMentionsToShow_ = res.pendingMentions || [];
           checkUserStatus();
         } else {
           showToast('登入失敗: ' + res.error, 'error');
@@ -2257,7 +2754,7 @@
     // 「新增圖片」的檔案選取控制項（還沒達上限時才顯示）。發文（一開始清單
     // 是空的）跟編輯文章（一開始填入既有的 imageUrls）共用同一套外觀跟邏輯。
     // addFnName/removeFnName 是要接在 onchange/onclick 上的全域函式名稱字串。
-    function renderImageListHtml(list, addFnName, removeFnName) {
+    function renderImageListHtml(list, addFnName, removeFnName, moveFnName) {
       var html = '<div class="edit-image-slots">';
       list.forEach(function(item, i) {
         html += '<div class="edit-image-slot">';
@@ -2266,7 +2763,20 @@
         } else {
           html += '<img src="' + URL.createObjectURL(item) + '" alt="新選擇的圖片" />';
         }
+        // 圖片排序按鈕（ticket 03）：純陣列相鄰元素交換，跟移除按鈕同一種
+        // inline onclick 字串組裝方式——i 是陣列索引（數字，不是使用者輸入），
+        // moveFnName 是呼叫端傳入的函式名稱字串（同 addFnName/removeFnName
+        // 既有慣例），沒有新增任何攻擊面。第一張的往前移、最後一張的往後移
+        // 停用，比照既有分頁按鈕在邊界停用的模式。
+        html += '<div class="edit-image-slot-actions">';
+        html += '<button type="button" class="secondary" style="font-size:0.75rem; padding:2px 6px;"' +
+          (i === 0 ? ' disabled' : '') +
+          ' onclick="' + moveFnName + '(' + i + ',-1)">◀</button>';
+        html += '<button type="button" class="secondary" style="font-size:0.75rem; padding:2px 6px;"' +
+          (i === list.length - 1 ? ' disabled' : '') +
+          ' onclick="' + moveFnName + '(' + i + ',1)">▶</button>';
         html += '<button type="button" class="secondary" style="font-size:0.75rem; padding:2px 8px;" onclick="' + removeFnName + '(' + i + ')">移除</button>';
+        html += '</div>';
         html += '</div>';
       });
       if (list.length < MAX_IMAGES_PER_ARTICLE) {
@@ -2276,6 +2786,20 @@
       }
       html += '</div>';
       return html;
+    }
+
+    // 圖片排序按鈕（ticket 03）：純陣列相鄰元素交換，index 超出範圍或移動後
+    // 會超出邊界時直接不動作（防禦性寫法——正常互動下按鈕在邊界本來就
+    // disabled，這裡的邊界判斷純粹是保險，不依賴按鈕一定被正確停用）。
+    // 桌面發文/手機發文/編輯文章三處呼叫，共用同一段邏輯、同一種邊界處理。
+    function moveImageInList_(list, index, direction) {
+      var targetIndex = index + direction;
+      if (index < 0 || index >= list.length || targetIndex < 0 || targetIndex >= list.length) {
+        return;
+      }
+      var tmp = list[index];
+      list[index] = list[targetIndex];
+      list[targetIndex] = tmp;
     }
 
     // 從 list 裡取出真正要上傳的 File 物件（既有連結字串跳過）
@@ -2456,12 +2980,17 @@
 
     function renderNewArticleImageSlots() {
       var container = document.getElementById('newArticleImageSlotsContainer');
-      if (container) container.innerHTML = renderImageListHtml(newArticleImageList, 'addNewArticleImage', 'removeNewArticleImage');
+      if (container) container.innerHTML = renderImageListHtml(newArticleImageList, 'addNewArticleImage', 'removeNewArticleImage', 'moveNewArticleImage');
     }
 
     function addNewArticleImage(inputEl) {
       tryAddDroppedFiles_(newArticleImageList, inputEl.files, renderNewArticleImageSlots);
       inputEl.value = ''; // 清空，不然選同一批檔案時瀏覽器不會再次觸發 change
+    }
+
+    function moveNewArticleImage(index, direction) {
+      moveImageInList_(newArticleImageList, index, direction);
+      renderNewArticleImageSlots();
     }
 
     function removeNewArticleImage(index) {
@@ -2474,12 +3003,17 @@
 
     function renderMobileNewArticleImageSlots() {
       var container = document.getElementById('mobileNewArticleImageSlotsContainer');
-      if (container) container.innerHTML = renderImageListHtml(mobileNewArticleImageList, 'addMobileNewArticleImage', 'removeMobileNewArticleImage');
+      if (container) container.innerHTML = renderImageListHtml(mobileNewArticleImageList, 'addMobileNewArticleImage', 'removeMobileNewArticleImage', 'moveMobileNewArticleImage');
     }
 
     function addMobileNewArticleImage(inputEl) {
       tryAddDroppedFiles_(mobileNewArticleImageList, inputEl.files, renderMobileNewArticleImageSlots);
       inputEl.value = ''; // 清空，不然選同一批檔案時瀏覽器不會再次觸發 change
+    }
+
+    function moveMobileNewArticleImage(index, direction) {
+      moveImageInList_(mobileNewArticleImageList, index, direction);
+      renderMobileNewArticleImageSlots();
     }
 
     function removeMobileNewArticleImage(index) {
@@ -2507,11 +3041,26 @@
       pendingRequests[key] = false;
     }
 
+    // 複審 N-2（見對話紀錄，`/mycr` 三層審查發現）：這支函式跟下面的
+    // handleMobilePostArticle 邏輯幾乎逐行對應（權限鎖定、按鈕禁用/還原、
+    // 圖片上傳、成功後更新快取、isViewingBoard_ 判斷要不要刷新畫面、失敗
+    // 處理），只有讀取的 DOM 元素 id 跟收尾動作（togglePostForm() vs
+    // closeMobileCompose()）不同——評估過抽成共用函式的重構成本，暫緩執行
+    // （這是 Index.html 的 glue 層，沒有自動化測試保護，純前端重構的風險
+    // 跟目前這點重複帶來的維護成本不成比例，見對話紀錄），但這裡先留一個
+    // 提醒：**改這支函式的邏輯時，記得檢查 handleMobilePostArticle 是不是
+    // 也需要跟著改**（M-1 修補、送出回覆後切文章的競態問題修復，都需要在
+    // 這兩支函式裡各自改一次同樣的邏輯）。之後如果有人要做前端更大範圍的
+    // 重構，這裡是優先候選。
     function handlePostArticle() {
       if (isRequestPending('postArticle')) return; // 連點：已經有一個發文請求還在等 GAS 回應，直接跳過
       var title = document.getElementById('newArticleTitle').value;
       var content = document.getElementById('newArticleContent').value;
       if (!title || !content) { showToast('請填寫標題與內容', 'error'); return; }
+
+      // bug-fix 輪：跟 handlePostReply 同一個成因——圖片上傳這段等待期間使用者
+      // 可以切去別的看板，callback 裡不能讀當下可能已經變了的 currentBoardId
+      var targetBoardId = currentBoardId;
 
       // 修正：旗標要在圖片開始上傳「之前」就鎖住，不能等 uploadImagesInBatches
       // resolve 之後才鎖。圖片上傳（尤其分批上傳）本身就會耗時，這段等待期間
@@ -2538,16 +3087,16 @@
             document.getElementById('newArticleContent').value = '';
             newArticleImageList = [];
             renderNewArticleImageSlots();
-            togglePostForm(); // 發文後自動收合表單
+            togglePostForm(); // 發文後自動收合表單——跟切去哪個看板無關，一律收合
             // 實際部署後發現的問題（見對話紀錄）：這裡本來漏了 content 跟
             // imageUrls，剛發表的文章點開後只看得到標題——loadArticleDetail
             // 找得到本地快取就直接信任、不重新呼叫伺服器（見該函式說明），
             // 缺欄位就顯示成空的，要整個重新進板才會因為走一次真正的整批
             // 讀取補回正確資料。content 前端本來就有，imageUrls 現在
             // postArticleFromForm 會一併回傳（見 Code.js 的說明）。
-            var patched = patchArticleListOnCreate(currentBoardId, res.version, {
+            var patched = patchArticleListOnCreate(targetBoardId, res.version, {
               articleId: res.articleId,
-              boardId: currentBoardId,
+              boardId: targetBoardId,
               title: title,
               content: content,
               author: res.author,
@@ -2557,7 +3106,11 @@
               replyCount: 0,
               imageUrls: res.imageUrls || []
             });
-            if (patched) { renderArticleListFromCache(currentBoardId); } else { loadArticles(currentBoardId); }
+            // 只在使用者「現在」還停留在同一個看板時才刷新看得到的列表，不然
+            // 會把使用者已經切去的看板列表，硬換成剛剛發文那個看板的內容
+            if (isViewingBoard_(targetBoardId)) {
+              if (patched) { renderArticleListFromCache(targetBoardId); } else { loadArticles(targetBoardId); }
+            }
           } else {
             showToast('發文失敗: ' + res.error, 'error');
           }
@@ -2565,7 +3118,7 @@
           endRequest('postArticle');
           restorePostArticleBtn_();
           showToast('發文失敗，請稍後再試: ' + err.message, 'error');
-        }).postArticleFromForm(currentToken, currentBoardId, title, content, imageUrls);
+        }).postArticleFromForm(currentToken, targetBoardId, title, content, imageUrls);
       }).catch(function(err) {
         // 修正：beginRequest('postArticle') 現在提早到上傳前就設了，
         // 上傳失敗也要記得 endRequest，不然旗標卡在 true，之後永遠按不動「發布文章」。
@@ -2576,11 +3129,19 @@
     }
 
     // ticket 02：手機版全螢幕發文頁專用（沿用同一支 postArticleFromForm，只是欄位換成 mobile 專用的 input id）
+    // 複審 N-2（見對話紀錄）：這支函式跟上面的 handlePostArticle 是同一組
+    // 重複邏輯，評估細節見那邊的註解——**改這支函式時記得檢查桌面版
+    // handlePostArticle 是不是也需要跟著改**，反之亦然。
     function handleMobilePostArticle() {
       if (isRequestPending('postArticle')) return; // 跟桌面版共用同一把鎖：同一時間本來就不可能兩邊同時發文
       var title = document.getElementById('mobileNewArticleTitle').value;
       var content = document.getElementById('mobileNewArticleContent').value;
       if (!title || !content) { showToast('請填寫標題與內容', 'error'); return; }
+
+      // bug-fix 輪：跟桌面版 handlePostArticle 同一個成因，一併補上（手機版發文
+      // 頁是全螢幕覆蓋，實務上使用者比較難在等待期間切看板，但保持跟桌面版
+      // 同一套防護，避免之後兩邊行為不一致造成混淆）
+      var targetBoardId = currentBoardId;
 
       // 修正（跟桌面版 handlePostArticle 同一個成因）：旗標提早到圖片上傳前就鎖住。
       beginRequest('postArticle');
@@ -2601,9 +3162,9 @@
             // 實際部署後發現的問題（見對話紀錄，跟桌面版 handlePostArticle
             // 是同一個成因）：這裡本來漏了 content 跟 imageUrls，補齊理由
             // 完全一樣，見桌面版那邊的說明。
-            var patched = patchArticleListOnCreate(currentBoardId, res.version, {
+            var patched = patchArticleListOnCreate(targetBoardId, res.version, {
               articleId: res.articleId,
-              boardId: currentBoardId,
+              boardId: targetBoardId,
               title: title,
               content: content,
               author: res.author,
@@ -2613,8 +3174,10 @@
               replyCount: 0,
               imageUrls: res.imageUrls || []
             });
-            if (patched) { renderArticleListFromCache(currentBoardId); } else { loadArticles(currentBoardId); }
-            closeMobileCompose(); // 送出成功後回到原本畫面（list 或 detail，見 history.back() 的說明）
+            if (isViewingBoard_(targetBoardId)) {
+              if (patched) { renderArticleListFromCache(targetBoardId); } else { loadArticles(targetBoardId); }
+            }
+            closeMobileCompose(); // 送出成功後回到原本畫面（list 或 detail，見 history.back() 的說明）——跟切去哪個看板無關，一律照原本流程收合
           } else {
             showToast('發文失敗: ' + res.error, 'error');
           }
@@ -2622,7 +3185,7 @@
           endRequest('postArticle');
           restoreMobilePostArticleBtn_();
           showToast('發文失敗，請稍後再試: ' + err.message, 'error');
-        }).postArticleFromForm(currentToken, currentBoardId, title, content, imageUrls);
+        }).postArticleFromForm(currentToken, targetBoardId, title, content, imageUrls);
       }).catch(function(err) {
         endRequest('postArticle'); // 同上：上傳失敗也要解鎖，不然旗標卡死
         restoreMobilePostArticleBtn_();
@@ -2635,46 +3198,73 @@
       var content = document.getElementById('replyContentInput').value;
       if (!content) { showToast('請輸入回覆內容', 'error'); return; }
 
+      // bug-fix 輪：送出當下就鎖定這則回覆屬於哪個看板/哪篇文章，callback 裡
+      // 一律用這兩個區域變數，不要讀當下可能已經被使用者切走的全域變數（見上方
+      // isViewingArticle_/isViewingBoard_ 說明區塊——這正是這次修的 bug 本身：
+      // 使用者送出回覆後、伺服器還沒回應前點開了另一篇文章，回覆就錯誤地被
+      // 套用到那篇「現在剛好顯示的」文章上）
+      var targetBoardId = currentBoardId;
+      var targetArticleId = currentArticleId;
+
       beginRequest('postReply');
       google.script.run.withSuccessHandler(function(res) {
         endRequest('postReply');
         if (res.success) {
-          var patched = patchArticleDetailOnReplyCreate(currentArticleId, res.version, {
+          // 快取一律用 target 值更新，不管使用者現在切到哪裡，之後點回這篇
+          // 文章看到的都會是最新資料
+          var updatedDetail = patchArticleDetailOnReplyCreate(targetBoardId, targetArticleId, res.version, {
             replyId: res.replyId,
-            articleId: currentArticleId,
+            articleId: targetArticleId,
             author: res.author,
             content: content,
             createdAt: res.createdAt
           });
-          if (patched) { renderArticleDetail(lastArticleDetail); } else { selectArticle(currentArticleId, null); }
-          patchArticleListReplyCount(currentBoardId, currentArticleId, 1);
+          // 畫面（右側詳情面板）只在使用者「現在」還停留在同一篇文章時才更新，
+          // 不然會把使用者已經切去看的其他文章畫面，硬拉回這篇文章
+          if (isViewingArticle_(targetArticleId)) {
+            if (updatedDetail) { lastArticleDetail = updatedDetail; renderArticleDetail(lastArticleDetail); }
+            else { selectArticle(targetArticleId, null); }
+          }
+          patchArticleListReplyCount(targetBoardId, targetArticleId, 1);
         } else {
           showToast('回覆失敗: ' + res.error, 'error');
         }
       }).withFailureHandler(function(err) {
         endRequest('postReply');
         showToast('回覆失敗，請稍後再試: ' + err.message, 'error');
-      }).postReplyFromForm(currentToken, currentArticleId, content);
+      }).postReplyFromForm(currentToken, targetArticleId, content);
     }
 
     // 8. 刪除文章 / 刪除留言（顯示與否已在 renderArticleDetail 依權限判斷）
     function handleDeleteArticle(articleId) {
       if (isRequestPending('deleteArticle')) return;
+      // bug-fix 輪：跟 handleDeleteReply 同一個成因，showConfirm 跟
+      // google.script.run 都還隔著非同步空檔，先鎖定看板
+      var targetBoardId = currentBoardId;
       showConfirm('確定要刪除這篇文章嗎？留言也會一併刪除，此動作無法復原。', function() {
         beginRequest('deleteArticle');
         google.script.run.withSuccessHandler(function(res) {
           endRequest('deleteArticle');
           if (res.success) {
-            currentArticleId = '';
+            var resolvedBoardId = res.boardId || targetBoardId;
             // 效能優化 ticket 05：文章沒了，patchArticleListOnDelete 已經會一併清掉
-            // 統一快取裡對應的 articles/repliesByArticleId，這裡不用再另外處理
-            document.getElementById('rightPanel').innerHTML = '<div class="placeholder-msg">👈 請從左側點選文章查看內容</div>';
-            var patched = patchArticleListOnDelete(res.boardId || currentBoardId, res.version, articleId);
-            if (patched) { renderArticleListFromCache(res.boardId || currentBoardId); } else { loadArticles(currentBoardId); }
-            // 手機版：文章被刪掉了，畫面上不會再有「← 返回列表」按鈕，
-            // 直接透過瀏覽器歷史記錄退回列表畫面（跟 backToList() 走同一條路徑）
-            if (viewMode === 'mobile') {
-              backToList();
+            // 統一快取裡對應的 articles/repliesByArticleId，這裡不用再另外處理——
+            // 快取一律更新，不管使用者現在切到哪裡
+            var patched = patchArticleListOnDelete(resolvedBoardId, res.version, articleId);
+            // 畫面（右側詳情面板／手機返回列表）只在使用者「現在」還停留在
+            // 剛剛刪掉的這篇文章時才動作——如果這段等待期間已經點去別的文章，
+            // 不該無端把畫面清空或把手機畫面拉回列表
+            if (isViewingArticle_(articleId)) {
+              currentArticleId = '';
+              document.getElementById('rightPanel').innerHTML = '<div class="placeholder-msg">👈 請從左側點選文章查看內容</div>';
+              // 手機版：文章被刪掉了，畫面上不會再有「← 返回列表」按鈕，
+              // 直接透過瀏覽器歷史記錄退回列表畫面（跟 backToList() 走同一條路徑）
+              if (viewMode === 'mobile') {
+                backToList();
+              }
+            }
+            if (isViewingBoard_(resolvedBoardId)) {
+              if (patched) { renderArticleListFromCache(resolvedBoardId); } else { loadArticles(resolvedBoardId); }
             }
           } else {
             showToast('刪除失敗: ' + res.error, 'error');
@@ -2688,14 +3278,21 @@
 
     function handleDeleteReply(articleId, replyId) {
       if (isRequestPending('deleteReply')) return;
+      // bug-fix 輪：articleId 本身是參數（按鈕 onclick 當下就固定了，不會受
+      // 使用者之後切走影響），但 currentBoardId 是全域變數，這裡跟 showConfirm
+      // 的確認彈窗、google.script.run 都還隔著非同步空檔，一樣要先鎖定
+      var targetBoardId = currentBoardId;
       showConfirm('確定要刪除這則回覆嗎？此動作無法復原。', function() {
         beginRequest('deleteReply');
         google.script.run.withSuccessHandler(function(res) {
           endRequest('deleteReply');
           if (res.success) {
-            var patched = patchArticleDetailOnReplyDelete(articleId, res.version, replyId);
-            if (patched) { renderArticleDetail(lastArticleDetail); } else { selectArticle(articleId, null); }
-            patchArticleListReplyCount(currentBoardId, articleId, -1);
+            var updatedDetail = patchArticleDetailOnReplyDelete(targetBoardId, articleId, res.version, replyId);
+            if (isViewingArticle_(articleId)) {
+              if (updatedDetail) { lastArticleDetail = updatedDetail; renderArticleDetail(lastArticleDetail); }
+              else { selectArticle(articleId, null); }
+            }
+            patchArticleListReplyCount(targetBoardId, articleId, -1);
           } else {
             showToast('刪除失敗: ' + res.error, 'error');
           }
@@ -2751,6 +3348,11 @@
       var content = document.getElementById('editArticleContent').value;
       if (!title || !content) { showToast('請填寫標題與內容', 'error'); return; }
 
+      // bug-fix 輪：跟 handlePostReply 同一個成因——articleId 本身是參數（點
+      // 「編輯」當下就固定了），但 currentBoardId 是全域變數，這裡到 callback
+      // 之間隔著圖片上傳的非同步空檔，一樣要提早鎖定
+      var targetBoardId = currentBoardId;
+
       // 修正（跟 handlePostArticle 同一個成因）：buildImageSlotsPayload 內部一樣會呼叫
       // uploadImagesInBatches，一樣要在上傳開始前就鎖旗標，不能等 resolve 才鎖，
       // 不然編輯文章時連點「儲存」也會把新選的圖片重複上傳好幾份。
@@ -2767,11 +3369,20 @@
           endRequest('saveEditArticle');
           restoreSaveEditBtn_();
           if (res.success) {
-            isEditingArticle = false;
-            var patchedDetail = patchArticleDetailOnEdit(articleId, res.articleVersion, title, content, res.editedAt, res.editedBy, res.imageUrls);
-            if (patchedDetail) { renderArticleDetail(lastArticleDetail); } else { loadArticleDetail(articleId); }
-            var patched = patchArticleListOnEdit(res.boardId || currentBoardId, res.version, articleId, title);
-            if (patched) { renderArticleListFromCache(res.boardId || currentBoardId); } else { loadArticles(currentBoardId); }
+            var resolvedBoardId = res.boardId || targetBoardId;
+            // 快取一律更新，不管使用者現在切到哪裡
+            var updatedDetail = patchArticleDetailOnEdit(resolvedBoardId, articleId, res.articleVersion, title, content, res.editedAt, res.editedBy, res.imageUrls);
+            var patched = patchArticleListOnEdit(resolvedBoardId, res.version, articleId, title);
+            // 畫面只在使用者「現在」還停留在同一篇文章／同一個看板時才更新——
+            // 不然會把使用者已經切走的畫面硬拉回這篇文章、或用舊看板的列表
+            // 蓋掉現在正在看的看板列表
+            if (isViewingArticle_(articleId)) {
+              isEditingArticle = false;
+              if (updatedDetail) { lastArticleDetail = updatedDetail; renderArticleDetail(lastArticleDetail); } else { loadArticleDetail(articleId); }
+            }
+            if (isViewingBoard_(resolvedBoardId)) {
+              if (patched) { renderArticleListFromCache(resolvedBoardId); } else { loadArticles(resolvedBoardId); }
+            }
           } else {
             showToast('儲存失敗: ' + res.error, 'error');
           }

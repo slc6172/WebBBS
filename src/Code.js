@@ -216,9 +216,20 @@ function clearPendingImageUrls_(cache, token) {
  */
 function uploadImageBatch(token, images) {
   var cache = CacheService.getScriptCache();
+  var ss = getSpreadsheet_();
   var userId = cache.get(SESSION_PREFIX + token);
   if (!userId) {
     return { success: false, error: '請重新登入' };
+  }
+  // 安全性審查 M-1 修復：原本這裡只檢查「有沒有登入」，沒有檢查角色是否真的
+  // 有 articlePost 權限——沒有發文權限的角色，理論上仍可以繞過前端 UI、直接
+  // 呼叫這支函式，把這個 BBS 背後的 Google Drive 資料夾當成公開檔案暫存空間
+  // 濫用（上傳的檔案一律設成「知道連結的任何人都能看」，見審查報告 M-1）。
+  // 跟 postArticleFromForm 用同一套 getSessionRole + 權限旗標檢查方式，只是
+  // 這裡不需要 role 變數留著給下面用，直接判斷完就地 return。
+  var role = getSessionRole(cache, ss, token);
+  if (!getRolePermissions(ss, role).articlePost) {
+    return { success: false, error: '權限不足' };
   }
   if (!images || images.length === 0) {
     return { success: true, urls: [] };
@@ -236,6 +247,16 @@ function uploadImageBatch(token, images) {
   var existingPendingCount = getPendingImageUrls_(cache, token).length;
   if (existingPendingCount + images.length > MAX_IMAGES_PER_ARTICLE) {
     return { success: false, error: '圖片數量超過上限' };
+  }
+  // 安全性審查 M-1 修復延伸：客戶端聲稱的 mimeType 原本原封不動寫進
+  // Utilities.newBlob，沒有限制只能是圖片——跟權限檢查是同一支函式，
+  // 順手一起擋，避免這個上傳端點被拿去存放跟圖片無關的任意檔案。純判斷邏輯
+  // 抽到 imageStorage.js 的 validateImageMimeType（有自動化測試覆蓋），這裡
+  // 只負責在真正呼叫 Drive 上傳之前擋下不合法的批次。
+  for (var i = 0; i < images.length; i++) {
+    if (!validateImageMimeType(images[i] && images[i].mimeType).valid) {
+      return { success: false, error: '檔案格式不支援，僅限圖片' };
+    }
   }
   var urls = uploadArticleImages_(images);
   addPendingImageUrls_(cache, token, urls);
@@ -368,7 +389,13 @@ function getBoardsFromToken(token) {
       description: b.description,
       sortOrder: b.sortOrder,
       hasNewArticle: status[b.boardId].hasNewArticle,
-      hasNewReply: status[b.boardId].hasNewReply
+      hasNewReply: status[b.boardId].hasNewReply,
+      // 未讀文章/新回覆徽章（ticket 01）：本來就已經解析好在 lastSeenBoards
+      // 裡了，這裡只是多回傳一個既有欄位，不新增任何 Sheets 讀取。前端把這
+      // 個值原封不動存起來，之後每次呼叫 getBoardBulkFromToken 時當參數帶
+      // 回去，讓伺服器可以算逐篇文章的 isNew/hasNewReply，而不用在那支函式
+      // 裡重新查一次 Users 表。
+      lastSeenAt: lastSeenBoards[b.boardId] || ''
     };
   });
   return JSON.stringify(boardsWithStatus);
@@ -427,7 +454,7 @@ function markBoardSeenFromToken(token, boardId) {
  * edit to an old article on page 2 doesn't invalidate page 1's cached
  * version, and vice versa.
  */
-function getBoardBulkFromToken(token, boardId, pageIndex, clientVersion) {
+function getBoardBulkFromToken(token, boardId, pageIndex, clientVersion, lastSeenAt) {
   var cache = CacheService.getScriptCache();
   var ss = getSpreadsheet_();
   var snapshot = getSessionSnapshot(cache, token);
@@ -446,10 +473,17 @@ function getBoardBulkFromToken(token, boardId, pageIndex, clientVersion) {
   var page = getBoardBulkPage(ss, boardId, pageIndex, BOARD_BULK_PAGE_SIZE);
   var version = Utilities.getUuid();
   bumpBoardVersion(cache, versionKey, version);
+  // 未讀/新回覆徽章（ticket 01）：lastSeenAt 是前端從 getBoardsFromToken 頁面
+  // 載入時就已經拿到的值，這裡原封不動當參數收下——不是機密，也不影響誰能
+  // 讀到什麼內容，頂多影響徽章顯示對不對，因此刻意不在這裡另外查一次
+  // Users.lastSeenBoards，維持零新增讀取。只在真的重讀了這一頁（不是
+  // unchanged/!allowed 分支）時才套用，跟版本快取機制完全不衝突：這一頁
+  // 版本不變時，前端沿用它自己先前已經標好徽章的舊資料即可。
+  var annotatedArticles = computeArticleUnreadFlags_(page.articles, page.repliesByArticleId, lastSeenAt || '');
   return JSON.stringify({
     unchanged: false,
     version: version,
-    articles: page.articles,
+    articles: annotatedArticles,
     repliesByArticleId: page.repliesByArticleId,
     hasMore: page.hasMore,
     // 跳頁功能用（見 Index.html 的 pager bar）：unchanged 分支跟 !allowed 分支

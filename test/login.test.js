@@ -171,6 +171,28 @@ test('getUserRecord_ reads a populated lastSeenBoards JSON blob as-is (parsing i
   expect(record.lastSeenBoards).toBe('{"gossip":"2026/08/05 10:00:00"}');
 });
 
+// ---- pendingMentions（@提及輪 ticket 05）----
+
+test('getUserRecord_ reads pendingMentions (column 11), defaulting to empty string when never set', () => {
+  const ss = createFakeSpreadsheet();
+  seedUser(ss);
+
+  const record = getUserRecord_(ss.getSheetByName('Users'), 'alice01');
+
+  expect(record.pendingMentions).toBe('');
+});
+
+test('getUserRecord_ reads a populated pendingMentions JSON blob as-is (parsing is mentions.js\'s job, not this function\'s)', () => {
+  const ss = createFakeSpreadsheet();
+  ensureSchema(ss);
+  const sheet = ss.getSheetByName('Users');
+  sheet.appendRow(['alice01', 'h', 's', 'user', "'2026/07/01 00:00:00", 0, '', 0, 0, '', '[{"articleId":"a1"}]']);
+
+  const record = getUserRecord_(sheet, 'alice01');
+
+  expect(record.pendingMentions).toBe('[{"articleId":"a1"}]');
+});
+
 // ---- 登入權限（權限系統 ticket 09）----
 
 test('login is rejected with the exact same error as a wrong password when the role\'s login permission is false, and does not increment the failure-lockout count', () => {
@@ -235,4 +257,116 @@ test('login is rejected the same way for a role that doesn\'t exist in the Permi
   });
 
   expect(result).toEqual({ success: false, error: 'userId 或密碼錯誤' });
+});
+
+// ---- 提及登入清單顯示（@提及輪 ticket 06）----
+
+test('a successful login returns the pending mentions that were sitting there before this login (parsed into an array, not a raw JSON string)', () => {
+  const ss = createFakeSpreadsheet();
+  seedUser(ss);
+  ss.getSheetByName('Users').getRange(2, 11, 1, 1).setValues([['[{"articleId":"a1","mentionedBy":"bob02"}]']]);
+  const cache = createFakeCache();
+
+  const result = login(ss, cache, function () { return 'token-a'; }, fakeDigest, '2026/08/05 09:00:00', {
+    userId: 'alice01',
+    password: 'password123'
+  });
+
+  expect(result.pendingMentions).toEqual([{ articleId: 'a1', mentionedBy: 'bob02' }]);
+});
+
+test('when there were no pending mentions, login returns an empty array (not null/undefined)', () => {
+  const ss = createFakeSpreadsheet();
+  seedUser(ss);
+  const cache = createFakeCache();
+
+  const result = login(ss, cache, function () { return 'token-a'; }, fakeDigest, '2026/08/05 09:00:00', {
+    userId: 'alice01',
+    password: 'password123'
+  });
+
+  expect(result.pendingMentions).toEqual([]);
+});
+
+test('a successful login clears pendingMentions on the sheet, regardless of whether the person actually views the list', () => {
+  const ss = createFakeSpreadsheet();
+  seedUser(ss);
+  ss.getSheetByName('Users').getRange(2, 11, 1, 1).setValues([['[{"articleId":"a1"}]']]);
+  const cache = createFakeCache();
+
+  login(ss, cache, function () { return 'token-a'; }, fakeDigest, '2026/08/05 09:00:00', {
+    userId: 'alice01',
+    password: 'password123'
+  });
+
+  const record = getUserRecord_(ss.getSheetByName('Users'), 'alice01');
+  expect(record.pendingMentions).toBe('[]');
+});
+
+test('clearing pendingMentions on login does not touch lastSeenBoards, articleCount, or replyCount — only the mentions column is written', () => {
+  const ss = createFakeSpreadsheet();
+  seedUser(ss);
+  const sheet = ss.getSheetByName('Users');
+  sheet.getRange(2, 8, 1, 3).setValues([[5, 3, '{"gossip":"2026/08/01 00:00:00"}']]); // articleCount, replyCount, lastSeenBoards
+  sheet.getRange(2, 11, 1, 1).setValues([['[{"articleId":"a1"}]']]);
+  const cache = createFakeCache();
+
+  login(ss, cache, function () { return 'token-a'; }, fakeDigest, '2026/08/05 09:00:00', {
+    userId: 'alice01',
+    password: 'password123'
+  });
+
+  const rows = sheet.getRange(2, 1, 1, 11).getValues();
+  expect(rows[0][7]).toBe(5); // articleCount 沒被動到
+  expect(rows[0][8]).toBe(3); // replyCount 沒被動到
+  expect(rows[0][9]).toBe('{"gossip":"2026/08/01 00:00:00"}'); // lastSeenBoards 沒被動到
+});
+
+test('a failed login does not clear pendingMentions', () => {
+  const ss = createFakeSpreadsheet();
+  seedUser(ss);
+  ss.getSheetByName('Users').getRange(2, 11, 1, 1).setValues([['[{"articleId":"a1"}]']]);
+  const cache = createFakeCache();
+
+  login(ss, cache, function () { return 'token-a'; }, fakeDigest, '2026/08/05 09:00:00', {
+    userId: 'alice01',
+    password: 'wrong-password'
+  });
+
+  const record = getUserRecord_(ss.getSheetByName('Users'), 'alice01');
+  expect(record.pendingMentions).toBe('[{"articleId":"a1"}]');
+});
+
+test('a login rejected by role permission does not clear pendingMentions', () => {
+  const ss = createFakeSpreadsheet();
+  seedUser(ss);
+  ss.getSheetByName('Users').getRange(2, 4, 1, 1).setValues([['blocked-role']]);
+  ss.getSheetByName('Users').getRange(2, 11, 1, 1).setValues([['[{"articleId":"a1"}]']]);
+  ss.getSheetByName('Permission').appendRow(
+    ['blocked-role', false, false, false, false, false, false, false, false]
+  );
+  const cache = createFakeCache();
+
+  login(ss, cache, function () { return 'token-a'; }, fakeDigest, '2026/08/05 09:00:00', {
+    userId: 'alice01',
+    password: 'password123'
+  });
+
+  const record = getUserRecord_(ss.getSheetByName('Users'), 'alice01');
+  expect(record.pendingMentions).toBe('[{"articleId":"a1"}]');
+});
+
+test('a malformed pendingMentions value on the sheet is treated as no mentions, not a crash', () => {
+  const ss = createFakeSpreadsheet();
+  seedUser(ss);
+  ss.getSheetByName('Users').getRange(2, 11, 1, 1).setValues([['not valid json']]);
+  const cache = createFakeCache();
+
+  const result = login(ss, cache, function () { return 'token-a'; }, fakeDigest, '2026/08/05 09:00:00', {
+    userId: 'alice01',
+    password: 'password123'
+  });
+
+  expect(result.success).toBe(true);
+  expect(result.pendingMentions).toEqual([]);
 });
