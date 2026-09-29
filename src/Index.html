@@ -735,6 +735,7 @@
     }
     .image-upload-label { font-size: 0.85rem; color: var(--color-text-secondary); }
     .image-upload-warning { font-size: 0.78rem; color: var(--color-warning-text); background: var(--color-warning-bg); padding: 6px 8px; border-radius: 6px; }
+    .mention-counter { font-size: 0.78rem; margin: -6px 0 6px 2px; min-height: 1em; }
 
     /* ---- ticket 09：文章下方圖片縮圖 ---- */
     .article-images {
@@ -956,8 +957,9 @@
           <h4>發表新文章</h4>
           <span class="btn-close" onclick="togglePostForm()">✕ 關閉</span>
         </div>
-        <input type="text" id="newArticleTitle" placeholder="文章標題" />
-        <textarea id="newArticleContent" placeholder="撰寫文章內容..."></textarea>
+        <input type="text" id="newArticleTitle" placeholder="文章標題" oninput="updateMentionCounter_('newArticleMentionCounter', document.getElementById('newArticleTitle').value + '\n' + document.getElementById('newArticleContent').value)" />
+        <textarea id="newArticleContent" placeholder="撰寫文章內容..." oninput="updateMentionCounter_('newArticleMentionCounter', document.getElementById('newArticleTitle').value + '\n' + document.getElementById('newArticleContent').value)"></textarea>
+        <div id="newArticleMentionCounter" class="mention-counter"></div>
         <div class="image-upload-box">
           <label class="image-upload-label">📷 附加圖片（最多 99 張，jpg/png/gif/webp，單張上限 5MB；可點選、拖曳或貼上剪貼簿圖片，選多了會自動分批上傳，不用自己拆）</label>
           <div id="newArticleImageSlotsContainer"></div>
@@ -984,8 +986,9 @@
       <h3>發表新文章</h3>
     </div>
     <div class="mobile-compose-body">
-      <input type="text" id="mobileNewArticleTitle" placeholder="文章標題" />
-      <textarea id="mobileNewArticleContent" placeholder="撰寫文章內容..."></textarea>
+      <input type="text" id="mobileNewArticleTitle" placeholder="文章標題" oninput="updateMentionCounter_('mobileNewArticleMentionCounter', document.getElementById('mobileNewArticleTitle').value + '\n' + document.getElementById('mobileNewArticleContent').value)" />
+      <textarea id="mobileNewArticleContent" placeholder="撰寫文章內容..." oninput="updateMentionCounter_('mobileNewArticleMentionCounter', document.getElementById('mobileNewArticleTitle').value + '\n' + document.getElementById('mobileNewArticleContent').value)"></textarea>
+      <div id="mobileNewArticleMentionCounter" class="mention-counter"></div>
       <div class="image-upload-box">
         <label class="image-upload-label">📷 附加圖片（最多 99 張，jpg/png/gif/webp，單張上限 5MB；可點選、拖曳或貼上剪貼簿圖片，選多了會自動分批上傳，不用自己拆）</label>
         <div id="mobileNewArticleImageSlotsContainer"></div>
@@ -1212,6 +1215,7 @@
       applyBodyClasses();
       document.getElementById('mobileNewArticleTitle').value = '';
       document.getElementById('mobileNewArticleContent').value = '';
+      revokeAllNewImageObjectURLs_(mobileNewArticleImageList);
       mobileNewArticleImageList = [];
       renderMobileNewArticleImageSlots();
     }
@@ -1447,7 +1451,7 @@
       if (currentUserId) {
         var loginStatsText = '登入次數: ' + (currentLoginCount || '—') + ' ｜ 上次登入: ' + (currentLastLoginAt || '尚無記錄');
         panel.innerHTML = `
-          <span>身份: <strong>${escapeHtml(currentUserId)}</strong> (${currentRole})</span>
+          <span>身份: <strong>${escapeHtml(currentUserId)}</strong> (${escapeHtml(currentRole)})</span>
           <span class="login-stats-badge">${escapeHtml(loginStatsText)}</span>
           <button class="secondary" onclick="handleLogout()">登出</button>
           <button type="button" class="mobile-more-btn" onclick="toggleMoreMenu()">⋯</button>
@@ -1848,7 +1852,7 @@
       }).withFailureHandler(function(err) {
         if (btn) { btn.disabled = false; btn.textContent = '載入更早的文章'; }
         if (searchBtn) { searchBtn.disabled = false; searchBtn.textContent = '載入更早的文章再搜一次'; }
-        showToast('載入更早的文章失敗，請稍後再試: ' + err.message, 'error');
+        showFailureToast_('載入更早的文章失敗', err);
       }).getBoardBulkFromToken(currentToken, boardId, nextPageIndex, '', getBoardLastSeenAt_(boardId));
     }
 
@@ -1947,7 +1951,7 @@
         renderArticleListFromCache(boardId);
       }).withFailureHandler(function(err) {
         renderArticleListFromCache(boardId); // 退回原本已快取的畫面，不留在「載入中」
-        showToast('跳頁失敗，請稍後再試: ' + err.message, 'error');
+        showFailureToast_('跳頁失敗', err);
       }).getBoardBulkFromToken(currentToken, boardId, targetPageIndex, '', getBoardLastSeenAt_(boardId));
     }
 
@@ -1993,6 +1997,18 @@
 
     // 本人發文成功後直接本地插入，不重新呼叫伺服器；新文章一律插進第 0 頁最前面，
     // 跟伺服器端「newest first」排序、以及「新文章永遠出現在最新一頁」的設計一致
+    //
+    // bug-fix 輪 3：發文本身跟這個函式之間隔著一次非同步的 google.script.run
+    // 往返，這段等待期間使用者完全可以做別的操作——例如在跳頁後的頁次發文，
+    // 送出去但還沒收到回應時就手動點回第 0 頁，觸發另一個獨立的 jumpToPage
+    // 請求。如果那個跳頁請求先完成、把 pages[0] 換成「已經包含這篇新文章」的
+    // 最新資料（伺服器這時候寫入早就完成了，跳頁重新抓到的本來就是最新狀態），
+    // 這裡才姍姍來遲執行到，若不做任何檢查就直接 unshift，會把同一篇文章
+    // 重複插入兩次——試算表裡其實只有一筆，純粹是本地快取被灌重複，畫面上
+    // 才會看起來像「同一篇文章出現兩次」，重新整理後就會消失（因為重新整理
+    // 是單一次全新讀取，不會走這段本地拼接邏輯）。插入前先確認這篇文章是否
+    // 已經在 pages[0] 裡，是的話代表已經有別的路徑先一步補上了，這裡當作
+    // 已經是最新狀態即可，不用也不該再插入一次。
     function patchArticleListOnCreate(boardId, version, newArticle) {
       var entry = boardBulkCache[boardId];
       if (!entry || !entry.pages[0]) return false; // 這個看板本次 session 還沒讀過，沒東西可以本地拼接，下次切過去時走正常的完整讀取
@@ -2001,6 +2017,11 @@
       // 用 loadArticles 整個重新載入（會把 baseIndex 重置回 0），新文章才會正確
       // 出現在使用者眼前，而不是被塞進一頁根本不是最新內容的舊頁次裡
       if (entry.baseIndex !== 0) return false;
+      var alreadyPresent = entry.pages[0].articles.some(function(a) { return a.articleId === newArticle.articleId; });
+      if (alreadyPresent) {
+        entry.pages[0].version = version; // 版本仍然要同步，避免下次比對誤判成「有其他異動」
+        return true;
+      }
       entry.pages[0].articles.unshift(newArticle);
       entry.pages[0].repliesByArticleId[newArticle.articleId] = [];
       entry.pages[0].version = version; // 同步伺服器這次寫入後的新版本，避免下次比對誤判成「有其他異動」
@@ -2197,12 +2218,20 @@
     // true/false 改成「更新後的 {article, replies}／null」，不在這裡直接寫
     // lastArticleDetail——是否要同步到看得到的右側面板，交給呼叫端用
     // isViewingArticle_ 判斷過後再決定（見上方 bug-fix 輪的說明區塊）。
+    // bug-fix 輪 3：跟 patchArticleListOnCreate 同一個成因——回覆本身跟這個函式
+    // 之間也隔著一次非同步往返，如果有另一個獨立的操作先一步把這篇文章的
+    // repliesByArticleId 換成「已經包含這則新回覆」的最新資料（例如同時間
+    // 剛好有別的路徑重新整理了同一篇文章），這裡不做檢查就直接 push 會造成
+    // 同一則回覆重複兩次。理由跟修法完全比照 patchArticleListOnCreate。
     function patchArticleDetailOnReplyCreate(boardId, articleId, version, newReply) {
       var located = findCachedArticleLocation_(boardId, articleId);
       if (!located) return null;
       var page = boardBulkCache[boardId].pages[located.pageIndex];
       if (!page.repliesByArticleId[articleId]) page.repliesByArticleId[articleId] = [];
-      page.repliesByArticleId[articleId].push(newReply);
+      var alreadyPresent = page.repliesByArticleId[articleId].some(function(r) { return r.replyId === newReply.replyId; });
+      if (!alreadyPresent) {
+        page.repliesByArticleId[articleId].push(newReply);
+      }
       page.version = version;
       return { article: located.article, replies: page.repliesByArticleId[articleId] };
     }
@@ -2533,6 +2562,7 @@
     }
 
     function removeEditImage(index) {
+      revokeNewImageObjectURLIfAny_(editImageList[index]);
       editImageList.splice(index, 1);
       renderArticleDetail(lastArticleDetail);
     }
@@ -2632,7 +2662,8 @@
 
         <div class="post-reply-form">
           <h4>撰寫回覆</h4>
-          <textarea id="replyContentInput" placeholder="輸入回覆內容..."></textarea>
+          <textarea id="replyContentInput" placeholder="輸入回覆內容..." oninput="updateMentionCounter_('replyMentionCounter', document.getElementById('replyContentInput').value)"></textarea>
+          <div id="replyMentionCounter" class="mention-counter"></div>
           <div>
             <button class="btn-primary" onclick="handlePostReply()">送出回覆</button>
           </div>
@@ -2712,6 +2743,45 @@
     var ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
     var MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024; // 5MB，單張圖片上限，不變
     var MAX_IMAGES_PER_ARTICLE = 99; // 圖片張數突破：從 3 放寬到 99，跟後端 imageStorage.js 的 MAX_IMAGES_PER_ARTICLE 是同一個數字（前端沒有 require，這裡各自維護一份常數，跟 Code.js 檔頭說明的前後端邊界一致）
+    // API4（換角度複查輪，對照 OWASP API Security Top 10 2023）：跟上面兩個
+    // 圖片常數同一種做法——前端沒有 require，這裡各自維護一份常數跟一份
+    // 判斷邏輯，鏡射 src/mentions.js 的 MAX_MENTIONS_PER_POST／
+    // validateMentionCount_。這裡純粹是操作體驗（送出前先提示，不用等伺服器
+    // 回應才知道超過上限），真正擋住繞過前端直接呼叫後端的關卡在
+    // postArticle.js/postReply.js 那兩道伺服器端驗證，這裡少算或漏算完全
+    // 不影響安全性，只影響使用者體驗好不好。
+    var MAX_MENTIONS_PER_POST = 20;
+    function countDistinctMentions_(text) {
+      if (!text) return 0;
+      var seen = {};
+      var count = 0;
+      var re = /@([A-Za-z0-9_]{4,20})/g;
+      var match;
+      while ((match = re.exec(text)) !== null) {
+        if (!seen[match[1]]) { seen[match[1]] = true; count++; }
+      }
+      return count;
+    }
+    // 即時提示（打字當下就更新，不用等按下送出）——跟送出前那道 pre-submit
+    // 檢查是分開的兩件事：這裡純粹是操作體驗，就算這支函式壞掉或完全沒接上，
+    // 也不影響真正擋住繞過行為的伺服器端驗證。count 為 0（還沒打任何 @提及）
+    // 時不顯示任何文字，避免每個發文框一打開就先看到一行空泛的提示。
+    function updateMentionCounter_(elementId, text) {
+      var el = document.getElementById(elementId);
+      if (!el) return;
+      var count = countDistinctMentions_(text);
+      if (count === 0) {
+        el.textContent = '';
+        return;
+      }
+      if (count > MAX_MENTIONS_PER_POST) {
+        el.textContent = '你已經 @提及 ' + count + ' 人，超過上限 ' + MAX_MENTIONS_PER_POST + ' 人，請減少後再送出';
+        el.style.color = '#c0392b';
+      } else {
+        el.textContent = '已 @提及 ' + count + ' / ' + MAX_MENTIONS_PER_POST + ' 人';
+        el.style.color = '#666';
+      }
+    }
     // 圖片自動分批上傳：原本這裡是「新選圖片」總位元組數超過 30MB 就整個擋下、
     // 要使用者自己移除幾張再試的 MAX_TOTAL_IMAGE_BYTES 上限。改成自動分批後
     // 不再需要整體上限——uploadImagesInBatches 會依這個「每批」上限（不是
@@ -2754,6 +2824,39 @@
     // 「新增圖片」的檔案選取控制項（還沒達上限時才顯示）。發文（一開始清單
     // 是空的）跟編輯文章（一開始填入既有的 imageUrls）共用同一套外觀跟邏輯。
     // addFnName/removeFnName 是要接在 onchange/onclick 上的全域函式名稱字串。
+    // mycr 第 15 輪票 07（見 L-07）：每次重繪圖片清單都對同一個 File
+    // 物件重新呼叫 URL.createObjectURL，卻從來沒有 revoke 過先前那一個
+    // ——使用者調整圖片清單（新增/移除/排序）的次數一多，瀏覽器記憶體裡
+    // 就會累積愈來愈多用不到的 blob URL。用一個 WeakMap 把「這個 File
+    // 物件」跟「它的 blob URL」綁在一起，同一個 File 物件重繪時直接沿用
+    // 既有的 URL（不重新建立），只有在使用者真的把這張圖片從清單移除時
+    // （見下面三個 removeXxxImage 函式）才 revoke。用 WeakMap 而不是
+    // 一般物件，是因為它的 key 是 File 物件本身，之後就算忘記在某個地方
+    // 手動 revoke，物件被清單移除後也不會因為這個 Map 的參照而繼續卡在
+    // 記憶體裡。
+    var newImageObjectURLs_ = (typeof WeakMap !== 'undefined') ? new WeakMap() : null;
+    function objectURLForNewImage_(file) {
+      if (!newImageObjectURLs_) return URL.createObjectURL(file); // 極舊瀏覽器 fallback，退回原本行為
+      if (!newImageObjectURLs_.has(file)) {
+        newImageObjectURLs_.set(file, URL.createObjectURL(file));
+      }
+      return newImageObjectURLs_.get(file);
+    }
+    function revokeNewImageObjectURLIfAny_(item) {
+      if (newImageObjectURLs_ && typeof item !== 'string' && newImageObjectURLs_.has(item)) {
+        URL.revokeObjectURL(newImageObjectURLs_.get(item));
+        newImageObjectURLs_.delete(item);
+      }
+    }
+    // 整批清空清單時（發文成功、重新打開表單覆蓋掉舊草稿）用這支，逐一
+    // revoke 每一個還沒被個別移除過的 File——單靠 WeakMap 讓 File 物件
+    // 本身被垃圾回收，並不會連帶讓瀏覽器把對應的 blob URL 一併釋放，
+    // blob URL 的生命週期是瀏覽器獨立追蹤的，一定要明確呼叫
+    // revokeObjectURL 才會真的釋放，不能依賴 GC 代勞。
+    function revokeAllNewImageObjectURLs_(list) {
+      list.forEach(revokeNewImageObjectURLIfAny_);
+    }
+
     function renderImageListHtml(list, addFnName, removeFnName, moveFnName) {
       var html = '<div class="edit-image-slots">';
       list.forEach(function(item, i) {
@@ -2761,7 +2864,7 @@
         if (typeof item === 'string') {
           html += '<img src="' + escapeHtml(item) + '" alt="附加圖片" />';
         } else {
-          html += '<img src="' + URL.createObjectURL(item) + '" alt="新選擇的圖片" />';
+          html += '<img src="' + objectURLForNewImage_(item) + '" alt="新選擇的圖片" />';
         }
         // 圖片排序按鈕（ticket 03）：純陣列相鄰元素交換，跟移除按鈕同一種
         // inline onclick 字串組裝方式——i 是陣列索引（數字，不是使用者輸入），
@@ -2962,7 +3065,14 @@
                   allUrls = allUrls.concat(res.urls || []);
                   resolve();
                 } else {
-                  reject(new Error((res && res.error) || '圖片上傳失敗'));
+                  // `/mycr` 全新視角複掃 Finding A：這個 Error 是我們自己刻意組出來的
+                  // 業務層錯誤（res.error 是 uploadImageBatch 已經想好要給使用者看的
+                  // 中文訊息，例如「權限不足」「圖片格式不符」），標記 isExpected，
+                  // 讓外層 .catch() 知道這個 .message 可以放心顯示——跟下面
+                  // withFailureHandler 接到的「真的未預期的例外」要分開處理。
+                  var businessError = new Error((res && res.error) || '圖片上傳失敗');
+                  businessError.isExpected = true;
+                  reject(businessError);
                 }
               }).withFailureHandler(function(err) {
                 reject(err);
@@ -2994,6 +3104,7 @@
     }
 
     function removeNewArticleImage(index) {
+      revokeNewImageObjectURLIfAny_(newArticleImageList[index]);
       newArticleImageList.splice(index, 1);
       renderNewArticleImageSlots();
     }
@@ -3017,6 +3128,7 @@
     }
 
     function removeMobileNewArticleImage(index) {
+      revokeNewImageObjectURLIfAny_(mobileNewArticleImageList[index]);
       mobileNewArticleImageList.splice(index, 1);
       renderMobileNewArticleImageSlots();
     }
@@ -3057,6 +3169,10 @@
       var title = document.getElementById('newArticleTitle').value;
       var content = document.getElementById('newArticleContent').value;
       if (!title || !content) { showToast('請填寫標題與內容', 'error'); return; }
+      if (countDistinctMentions_(title + '\n' + content) > MAX_MENTIONS_PER_POST) {
+        showToast('一篇最多只能 @提及 ' + MAX_MENTIONS_PER_POST + ' 人，請減少後再送出', 'error');
+        return;
+      }
 
       // bug-fix 輪：跟 handlePostReply 同一個成因——圖片上傳這段等待期間使用者
       // 可以切去別的看板，callback 裡不能讀當下可能已經變了的 currentBoardId
@@ -3085,6 +3201,7 @@
           if (res.success) {
             document.getElementById('newArticleTitle').value = '';
             document.getElementById('newArticleContent').value = '';
+            revokeAllNewImageObjectURLs_(newArticleImageList);
             newArticleImageList = [];
             renderNewArticleImageSlots();
             togglePostForm(); // 發文後自動收合表單——跟切去哪個看板無關，一律收合
@@ -3117,14 +3234,14 @@
         }).withFailureHandler(function(err) {
           endRequest('postArticle');
           restorePostArticleBtn_();
-          showToast('發文失敗，請稍後再試: ' + err.message, 'error');
+          showFailureToast_('發文失敗', err);
         }).postArticleFromForm(currentToken, targetBoardId, title, content, imageUrls);
       }).catch(function(err) {
         // 修正：beginRequest('postArticle') 現在提早到上傳前就設了，
         // 上傳失敗也要記得 endRequest，不然旗標卡在 true，之後永遠按不動「發布文章」。
         endRequest('postArticle');
         restorePostArticleBtn_();
-        showToast('圖片上傳失敗，請稍後再試: ' + err.message, 'error');
+        showFailureToast_('圖片上傳失敗', err);
       });
     }
 
@@ -3137,6 +3254,10 @@
       var title = document.getElementById('mobileNewArticleTitle').value;
       var content = document.getElementById('mobileNewArticleContent').value;
       if (!title || !content) { showToast('請填寫標題與內容', 'error'); return; }
+      if (countDistinctMentions_(title + '\n' + content) > MAX_MENTIONS_PER_POST) {
+        showToast('一篇最多只能 @提及 ' + MAX_MENTIONS_PER_POST + ' 人，請減少後再送出', 'error');
+        return;
+      }
 
       // bug-fix 輪：跟桌面版 handlePostArticle 同一個成因，一併補上（手機版發文
       // 頁是全螢幕覆蓋，實務上使用者比較難在等待期間切看板，但保持跟桌面版
@@ -3157,6 +3278,7 @@
           endRequest('postArticle');
           restoreMobilePostArticleBtn_();
           if (res.success) {
+            revokeAllNewImageObjectURLs_(mobileNewArticleImageList);
             mobileNewArticleImageList = [];
             renderMobileNewArticleImageSlots();
             // 實際部署後發現的問題（見對話紀錄，跟桌面版 handlePostArticle
@@ -3184,12 +3306,12 @@
         }).withFailureHandler(function(err) {
           endRequest('postArticle');
           restoreMobilePostArticleBtn_();
-          showToast('發文失敗，請稍後再試: ' + err.message, 'error');
+          showFailureToast_('發文失敗', err);
         }).postArticleFromForm(currentToken, targetBoardId, title, content, imageUrls);
       }).catch(function(err) {
         endRequest('postArticle'); // 同上：上傳失敗也要解鎖，不然旗標卡死
         restoreMobilePostArticleBtn_();
-        showToast('圖片上傳失敗，請稍後再試: ' + err.message, 'error');
+        showFailureToast_('圖片上傳失敗', err);
       });
     }
 
@@ -3197,6 +3319,10 @@
       if (isRequestPending('postReply')) return;
       var content = document.getElementById('replyContentInput').value;
       if (!content) { showToast('請輸入回覆內容', 'error'); return; }
+      if (countDistinctMentions_(content) > MAX_MENTIONS_PER_POST) {
+        showToast('一篇最多只能 @提及 ' + MAX_MENTIONS_PER_POST + ' 人，請減少後再送出', 'error');
+        return;
+      }
 
       // bug-fix 輪：送出當下就鎖定這則回覆屬於哪個看板/哪篇文章，callback 裡
       // 一律用這兩個區域變數，不要讀當下可能已經被使用者切走的全域變數（見上方
@@ -3231,7 +3357,7 @@
         }
       }).withFailureHandler(function(err) {
         endRequest('postReply');
-        showToast('回覆失敗，請稍後再試: ' + err.message, 'error');
+        showFailureToast_('回覆失敗', err);
       }).postReplyFromForm(currentToken, targetArticleId, content);
     }
 
@@ -3271,7 +3397,7 @@
           }
         }).withFailureHandler(function(err) {
           endRequest('deleteArticle');
-          showToast('刪除失敗，請稍後再試: ' + err.message, 'error');
+          showFailureToast_('刪除失敗', err);
         }).deleteArticleFromForm(currentToken, articleId);
       });
     }
@@ -3298,7 +3424,7 @@
           }
         }).withFailureHandler(function(err) {
           endRequest('deleteReply');
-          showToast('刪除失敗，請稍後再試: ' + err.message, 'error');
+          showFailureToast_('刪除失敗', err);
         }).deleteReplyFromForm(currentToken, articleId, replyId);
       });
     }
@@ -3308,6 +3434,7 @@
       // 圖片張數突破：把目前的圖片清單存進編輯用的暫存狀態（複製一份，
       // 不要共用同一個陣列參考，避免編輯過程中不小心動到快取裡的原始資料）
       var article = lastArticleDetail && lastArticleDetail.article;
+      revokeAllNewImageObjectURLs_(editImageList); // 上一次進入編輯模式（若有）留下的 File 選取，這裡整批捨棄前先釋放
       editImageList = (article && article.imageUrls) ? article.imageUrls.slice() : [];
       isEditingArticle = true;
       renderArticleDetail(lastArticleDetail);
@@ -3389,14 +3516,14 @@
         }).withFailureHandler(function(err) {
           endRequest('saveEditArticle');
           restoreSaveEditBtn_();
-          showToast('儲存失敗，請稍後再試: ' + err.message, 'error');
+          showFailureToast_('儲存失敗', err);
         }).editArticleFromForm(currentToken, articleId, title, content, imageSlots);
       }).catch(function(err) {
         // 修正：beginRequest('saveEditArticle') 現在提早到上傳前就設了，
         // 上傳失敗也要 endRequest，不然「儲存」按鈕會永遠卡住按不動。
         endRequest('saveEditArticle');
         restoreSaveEditBtn_();
-        showToast('圖片上傳失敗，請稍後再試: ' + err.message, 'error');
+        showFailureToast_('圖片上傳失敗', err);
       });
     }
 
@@ -3525,6 +3652,23 @@
         toast.classList.remove('show');
         setTimeout(function() { toast.remove(); }, 200);
       }, duration);
+    }
+
+    // `/mycr` 全新視角複掃 Finding A（對照 OWASP Top 10:2025 A02/A10 都點名的
+    // 「錯誤處理揭露過度詳細訊息」模式）：google.script.run 的 withFailureHandler
+    // 接到的 err，除了圖片上傳那條路徑刻意標記過 isExpected 的業務錯誤（見
+    // uploadImagesInBatches），其餘全部是「完全沒預期到」的例外——可能是程式
+    // 本身的 bug，也可能包含比預期更多的內部細節。統一改用這支函式：業務錯誤
+    // 照樣把 err.message 顯示給使用者（那本來就是特地為使用者寫的中文訊息）；
+    // 真的未預期的例外一律只顯示一句通用訊息，原始內容只留在 console.error
+    // 給開發者自己在瀏覽器主控台查看，不呈現在使用者看到的提示裡。
+    function showFailureToast_(prefix, err) {
+      if (err && err.isExpected) {
+        showToast(prefix + '：' + err.message, 'error');
+      } else {
+        showToast(prefix + '，請稍後再試', 'error');
+        console.error(prefix, err);
+      }
     }
 
     // 通用確認彈窗：取代 confirm()，理由同上。confirm() 是同步的（呼叫端可以直接

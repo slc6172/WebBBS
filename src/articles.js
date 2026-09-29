@@ -3,9 +3,14 @@
  */
 var _permissionsModule = (typeof require !== 'undefined') ? require('./permissions') : null;
 var _boardsModule = (typeof require !== 'undefined') ? require('./boards') : null;
+var _textCoercionModule = (typeof require !== 'undefined') ? require('./textCoercion') : null;
+
+function toSafeDisplayStringFor_(value) {
+  return (_textCoercionModule ? _textCoercionModule.toSafeDisplayString_ : toSafeDisplayString_)(value);
+}
 
 function getRolePermissionsFor_(spreadsheet, role) {
-  return (_permissionsModule ? _permissionsModule.getRolePermissions : getRolePermissions)(spreadsheet, role);
+  return (_permissionsModule ? _permissionsModule.getRolePermissions_ : getRolePermissions_)(spreadsheet, role);
 }
 
 function boardAllowsRoleByIdFor_(spreadsheet, boardId, role) {
@@ -44,7 +49,7 @@ function listArticlesByBoard(spreadsheet, boardId) {
     articles.push({
       articleId: row[0],
       boardId: row[1],
-      title: row[2],
+      title: toSafeDisplayStringFor_(row[2]),
       author: row[3],
       createdAt: createdAtColumn[i][0],
       replyCount: replyCountColumn[i][0]

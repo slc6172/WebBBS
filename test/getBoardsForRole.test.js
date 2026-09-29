@@ -1,4 +1,4 @@
-const { getBoardsForRole } = require('../src/boards');
+const { getBoardsForRole_: getBoardsForRole } = require('../src/boards');
 const { ensureSchema } = require('../src/schema');
 const { createFakeSpreadsheet } = require('./doubles/fakeSpreadsheet');
 

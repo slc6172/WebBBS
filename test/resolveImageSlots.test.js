@@ -29,14 +29,24 @@ test('resolveImageSlots treats an empty-string slot as "clear this slot", always
   expect(result).toEqual({ resolved: ['', '', ''], newImages: [], newImageSlotIndexes: [], error: null });
 });
 
-test('resolveImageSlots collects object slots ({data, mimeType, fileName}) as pending new uploads, not as "kept" strings', () => {
+// ---- `/mycr` 全新視角複掃 Finding 1：拒絕 {data,...} 物件形狀 ----
+//
+// 背景：resolveImageSlots 原本把任何帶 .data 屬性的物件都當成「新圖片，
+// 收進 newImages 待上傳」，完全不檢查呼叫者是誰、格式是否合法。已確認
+// 現有前端（Index.html 的 buildImageSlotsPayload）從來不會送出這種物件
+// 形狀給 editArticleFromForm——一律先透過 uploadImageBatch（有完整權限/
+// 格式/大小驗證）拿到連結字串，再把純字串陣列送出。這代表這條分支對
+// 合法呼叫端是死路徑，但直接呼叫 RPC（跳過前端）仍然完全可達，會讓
+// 任何人不需要登入就能觸發真正的 Drive 寫入。完整攻擊鏈見
+// gas-bbs-mycr-finding1-editarticle-upload-fix-spec.md。
+// 修法：跟現有「字串不在白名單」的處理方式一致，直接拒絕整個請求。
+
+test('resolveImageSlots rejects an object slot ({data, mimeType, fileName}) instead of collecting it as a pending upload', () => {
   const slot = { data: 'base64==', mimeType: 'image/png', fileName: 'a.png' };
   const result = resolveImageSlots([slot, '', ''], ['', '', '']);
 
-  expect(result.error).toBeNull();
-  expect(result.newImages).toEqual([slot]);
-  expect(result.newImageSlotIndexes).toEqual([0]);
-  expect(result.resolved[0]).toBe(''); // 上傳後才會知道真正的網址，這裡先留空，由 Code.js 補
+  expect(result.error).toBe('不支援的圖片格式，請重新上傳');
+  expect(result.newImages).toEqual([]);
 });
 
 // ---- H3 核心：拒絕任意字串 ----
@@ -90,17 +100,29 @@ test('resolveImageSlots rejects as soon as any one slot is invalid, even if the 
 
 // ---- 圖片張數突破：任意長度陣列 ----
 
-test('resolveImageSlots handles more than 3 slots, mixing kept strings and new uploads', () => {
+test('resolveImageSlots handles more than 3 slots when they are all kept-string or empty slots', () => {
+  const result = resolveImageSlots(
+    ['https://lh3.googleusercontent.com/d/a', 'https://lh3.googleusercontent.com/d/b', '', '', 'https://lh3.googleusercontent.com/d/c'],
+    ['https://lh3.googleusercontent.com/d/a', 'https://lh3.googleusercontent.com/d/b', 'https://lh3.googleusercontent.com/d/c']
+  );
+
+  expect(result.error).toBeNull();
+  expect(result.resolved).toEqual(['https://lh3.googleusercontent.com/d/a', 'https://lh3.googleusercontent.com/d/b', '', '', 'https://lh3.googleusercontent.com/d/c']);
+});
+
+// `/mycr` 全新視角複掃 Finding 1：一個 {data,...} 物件混在一堆合法的既有
+// 字串連結中間，一樣要整個拒絕，不能因為其他格都合法就放行——跟既有的
+// 「任一格無效就整個拒絕」原則（見上面「rejects as soon as any one slot
+// is invalid」那個案例）一致，物件形狀現在也是同一種「無效」。
+test('resolveImageSlots rejects the whole request when an object slot appears mixed in among otherwise-valid kept-string slots', () => {
   const slot = { data: 'base64==', mimeType: 'image/png', fileName: 'c.png' };
   const result = resolveImageSlots(
     ['https://lh3.googleusercontent.com/d/a', 'https://lh3.googleusercontent.com/d/b', slot, '', 'https://lh3.googleusercontent.com/d/c'],
     ['https://lh3.googleusercontent.com/d/a', 'https://lh3.googleusercontent.com/d/b', 'https://lh3.googleusercontent.com/d/c']
   );
 
-  expect(result.error).toBeNull();
-  expect(result.resolved).toEqual(['https://lh3.googleusercontent.com/d/a', 'https://lh3.googleusercontent.com/d/b', '', '', 'https://lh3.googleusercontent.com/d/c']);
-  expect(result.newImages).toEqual([slot]);
-  expect(result.newImageSlotIndexes).toEqual([2]);
+  expect(result.error).toBe('不支援的圖片格式，請重新上傳');
+  expect(result.resolved).toBeNull();
 });
 
 test('resolveImageSlots rejects a submission with more than 99 slots, before checking any individual slot', () => {
@@ -120,15 +142,13 @@ test('resolveImageSlots accepts exactly 99 slots', () => {
   expect(result.resolved).toEqual(exactlyMax);
 });
 
-test('resolveImageSlots allows mixing a kept existing string with a brand-new upload object in different slots', () => {
+test('resolveImageSlots rejects the whole request when a kept existing string is mixed with an object slot in a different position', () => {
   const slot = { data: 'base64==', mimeType: 'image/png', fileName: 'b.png' };
   const result = resolveImageSlots(
     ['https://lh3.googleusercontent.com/d/abc', slot, ''],
     ['https://lh3.googleusercontent.com/d/abc', '', '']
   );
 
-  expect(result.error).toBeNull();
-  expect(result.resolved[0]).toBe('https://lh3.googleusercontent.com/d/abc');
-  expect(result.newImages).toEqual([slot]);
-  expect(result.newImageSlotIndexes).toEqual([1]);
+  expect(result.error).toBe('不支援的圖片格式，請重新上傳');
+  expect(result.resolved).toBeNull();
 });

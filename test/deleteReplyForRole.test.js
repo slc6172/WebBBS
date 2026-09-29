@@ -1,4 +1,4 @@
-const { deleteReplyForRole } = require('../src/deleteReply');
+const { deleteReplyForRole_: deleteReplyForRole } = require('../src/deleteReply');
 const { ensureSchema } = require('../src/schema');
 const { createFakeSpreadsheet } = require('./doubles/fakeSpreadsheet');
 const { createFakeLock } = require('./doubles/fakeLock');
@@ -34,6 +34,24 @@ test('deleteReplyForRole deletes the reply when role is admin, ignoring AllowRol
 
   expect(result).toEqual({ success: true });
   expect(ss.getSheetByName('Replies').getLastRow()).toBe(1);
+});
+
+test('A09: admin deleting someone else\'s reply writes exactly one AuditLog row', () => {
+  const ss = createFakeSpreadsheet();
+  ensureSchema(ss);
+  seedBoard(ss, ['gossip', '八卦板', '閒聊', 1, '', '', '']);
+  seedArticle(ss.getSheetByName('Articles'), {});
+  seedReply(ss.getSheetByName('Replies'), { author: 'bob02' });
+  const lock = createFakeLock();
+
+  deleteReplyForRole(ss, lock, 'admin', 'admin01', 'a1', 'r1', '2026/09/16 10:00:00');
+
+  const auditSheet = ss.getSheetByName('AuditLog');
+  expect(auditSheet.getLastRow()).toBe(2);
+  const row = auditSheet.getRange(2, 1, 1, 5).getValues()[0];
+  expect(row[1]).toBe('admin01');
+  expect(row[2]).toBe('ADMIN_DELETE_OTHERS_CONTENT');
+  expect(row[3]).toBe('r1');
 });
 
 test('deleteReplyForRole reads the Articles sheet at most once per call, for admin too', () => {

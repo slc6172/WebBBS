@@ -1,4 +1,4 @@
-const { incrementUserStat } = require('../src/userStats');
+const { incrementUserStat, incrementUserStatsBatch_ } = require('../src/userStats');
 const { ensureSchema } = require('../src/schema');
 const { createFakeSpreadsheet } = require('./doubles/fakeSpreadsheet');
 
@@ -68,4 +68,83 @@ test('incrementUserStat silently does nothing when the userId does not exist', (
 
   const row = ss.getSheetByName('Users').getRange(2, 1, 1, 9).getValues()[0];
   expect(row[7]).toBe(2); // alice01 unaffected
+});
+
+// mycr 第 15 輪票 13（見 F-14）：批次版本，一次套用「多個 userId 各自的
+// delta」，不管有幾個 userId、加總要處理多少筆，固定只讀寫整欄各一次
+// ——供 deleteArticle 刪除大量回覆時使用，取代逐則回覆各自呼叫一次
+// incrementUserStat（那樣每次都要重新整欄掃描一次 userId）。
+describe('incrementUserStatsBatch_', () => {
+  test('applies each userId\'s own delta to the given stat column in one pass', () => {
+    const ss = createFakeSpreadsheet();
+    ensureSchema(ss);
+    const users = ss.getSheetByName('Users');
+    seedUserRow(users, { userId: 'alice01', replyCount: 5 });
+    seedUserRow(users, { userId: 'bob02', replyCount: 2 });
+    seedUserRow(users, { userId: 'carol03', replyCount: 0 });
+
+    incrementUserStatsBatch_(users, 'replyCount', { alice01: -2, bob02: -1 });
+
+    const rows = users.getRange(2, 1, 3, 9).getValues();
+    const byId = {};
+    rows.forEach((r) => { byId[r[0]] = r[8]; });
+    expect(byId.alice01).toBe(3);
+    expect(byId.bob02).toBe(1);
+    expect(byId.carol03).toBe(0); // 沒有列在 deltas 裡，完全不受影響
+  });
+
+  test('treats a blank/never-set cell as 0 before applying the delta, same as the single-user version', () => {
+    const ss = createFakeSpreadsheet();
+    ensureSchema(ss);
+    ss.getSheetByName('Users').appendRow(['dave04', 'h', 's', 'user', "'2026/08/01 00:00:00"]);
+
+    incrementUserStatsBatch_(ss.getSheetByName('Users'), 'replyCount', { dave04: -1 });
+
+    const row = ss.getSheetByName('Users').getRange(2, 1, 1, 9).getValues()[0];
+    expect(row[8]).toBe(-1);
+  });
+
+  test('does nothing (and does not touch the sheet at all) when deltasByUserId is empty', () => {
+    const ss = createFakeSpreadsheet();
+    ensureSchema(ss);
+    const users = ss.getSheetByName('Users');
+    seedUserRow(users, { userId: 'alice01', replyCount: 5 });
+
+    expect(() => incrementUserStatsBatch_(users, 'replyCount', {})).not.toThrow();
+
+    const row = users.getRange(2, 1, 1, 9).getValues()[0];
+    expect(row[8]).toBe(5);
+  });
+
+  test('SpreadsheetApp call count stays constant regardless of how many distinct userIds are in deltasByUserId', () => {
+    const ss = createFakeSpreadsheet();
+    ensureSchema(ss);
+    const users = ss.getSheetByName('Users');
+    const deltasFew = {};
+    const deltasMany = {};
+    for (let i = 0; i < 30; i++) {
+      const id = 'user' + String(i).padStart(3, '0');
+      seedUserRow(users, { userId: id, replyCount: 10 });
+      if (i < 2) deltasFew[id] = -1;
+      deltasMany[id] = -1;
+    }
+
+    function countCalls(fn) {
+      let calls = 0;
+      const spy = new Proxy(users, {
+        get(target, prop) {
+          const value = target[prop];
+          if (typeof value !== 'function') return value;
+          return (...args) => { calls++; return value.apply(target, args); };
+        }
+      });
+      fn(spy);
+      return calls;
+    }
+
+    const fewCalls = countCalls((spy) => incrementUserStatsBatch_(spy, 'replyCount', deltasFew));
+    const manyCalls = countCalls((spy) => incrementUserStatsBatch_(spy, 'replyCount', deltasMany));
+
+    expect(manyCalls).toBe(fewCalls); // 2 個 userId 或 30 個 userId，呼叫次數應該完全一樣
+  });
 });

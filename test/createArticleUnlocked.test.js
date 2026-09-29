@@ -81,14 +81,26 @@ test('createArticleUnlocked_ writes more than 3 image URLs without truncating (f
   expect(JSON.parse(row[9])).toEqual(fiveUrls);
 });
 
-test('createArticleUnlocked_ escapes a formula-injection-shaped URL before JSON-encoding it (M1 carried forward into the array format)', () => {
+// mycr 第 15 輪票 05：原本這裡驗證「開頭像公式的 URL 會被跳脫」，是
+// 沿用 M1 修復（title/content 防公式注入）的邏輯類推到 imageUrls。但
+// imageUrls 是整包 JSON.stringify 之後才寫進「一整格」，不是像 title
+// 那樣獨立佔一格——這一整格永遠以 `[` 開頭，Sheets 的公式判讀本來就不
+// 會觸發，對陣列元素逐一跳脫從來沒有真的防到任何風險，純粹是跟
+// title/content 用同一招的表面一致，不是真的有效的縱深防禦。
+// escapeFormulaInjection 改成一律加前綴後，如果繼續在這裡套用，會讓
+// 每一個合法圖片連結在讀回來時都多一個游離的撇號，直接打不開——所以
+// 拿掉了這裡的跳脫。改成驗證：即使 URL 長得像公式，也會原封不動存進
+// imageUrls（這本來就不影響安全性——這個欄位從頭到尾只被拿來組
+// `<img>` 標籤跟比對 Drive 檔案網址，不會被當成公式執行，也不會被
+// 當成可執行內容處理）。
+test('createArticleUnlocked_ stores a formula-injection-shaped URL as-is in imageUrls (the JSON array cell can never itself be misread as a formula, so per-element escaping there never protected anything and only risked corrupting real image links)', () => {
   const ss = createFakeSpreadsheet();
   ensureSchema(ss);
 
   createArticleUnlocked_(ss, makeInput({ imageUrls: ['=HYPERLINK("evil")'] }));
 
   const row = ss.getSheetByName('Articles').getRange(2, 1, 1, 10).getValues()[0];
-  expect(JSON.parse(row[9])).toEqual(["'=HYPERLINK(\"evil\")"]);
+  expect(JSON.parse(row[9])).toEqual(['=HYPERLINK("evil")']);
 });
 
 test('createArticleUnlocked_ defensively caps to 99 images even when given more, without erroring (no interactive caller to show an error to, e.g. the LINE digest harvester)', () => {

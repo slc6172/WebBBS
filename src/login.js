@@ -14,9 +14,18 @@
  */
 var _register = (typeof require !== 'undefined') ? require('./register') : null;
 var _schemaModule = (typeof require !== 'undefined') ? require('./schema') : null;
+var _auditLogModule = (typeof require !== 'undefined') ? require('./auditLog') : null;
 
 function hashPasswordFor_(password, salt, digestFn) {
   return (_register ? _register.hashPassword : hashPassword)(password, salt, digestFn);
+}
+
+function appendAuditLogEntryFor_(spreadsheet, nowTimestamp, actor, action, target, detail) {
+  return (_auditLogModule ? _auditLogModule.appendAuditLogEntry_ : appendAuditLogEntry_)(spreadsheet, nowTimestamp, actor, action, target, detail);
+}
+
+function auditActionsFor_() {
+  return _auditLogModule ? _auditLogModule.AUDIT_ACTIONS : AUDIT_ACTIONS;
 }
 
 /**
@@ -30,6 +39,25 @@ function verifyPassword(storedHash, salt, candidatePassword, digestFn) {
 var LOGIN_FAIL_PREFIX = 'loginFail_';
 var SESSION_PREFIX = 'session_';
 var SESSION_SNAPSHOT_PREFIX = 'sessionPerm_';
+// `/mycr` 深層複掃 Finding 1：跟 SESSION_PREFIX 平行的獨立 cache key，只存
+// 「這個 token 建立當下」的 credentialVersion 快照，刻意不改動
+// SESSION_PREFIX 本身的值格式（純 userId 字串）——這樣 Code.js 裡所有既有的
+// `cache.get(SESSION_PREFIX + token)` 呼叫端（用來取得 author/requestingUserId
+// 的十幾處）完全不用跟著改。真正的比對邏輯在 permissions.js 的
+// getSessionRole_。
+var SESSION_VERSION_PREFIX = 'sessionVer_';
+// mycr 第 15 輪票 11（見 F-02）：跟 SESSION_VERSION_PREFIX 是同一組機制的
+// 另一半——SESSION_VERSION_PREFIX 存的是「這個 token 建立當下」的版本，
+// 這把 key 存的是「這個 userId 現在最新」的版本，由 resetPassword_ 在
+// 密碼被重設的當下寫入（見 adminResetPassword.js）。寫入類端點
+// （getSessionRole_）本來就會即時重讀 Users 表比對，不需要這把 key；
+// 這把 key 是專門給讀取類端點（getBoardsFromToken/getBoardBulkFromToken/
+// getArticleDetailFromToken）用的——讓它們不需要重讀 Users 表，只靠兩次
+// 快取讀取就能判斷 session 是否已經因為密碼重設而失效，見 permissions.js
+// 的 isSessionValidFor_。TTL 用跟 session token 一樣的 SESSION_TTL_SECONDS
+// （見該函式呼叫端的說明，為什麼這個長度保證涵蓋得到任何在重設當下仍然
+// 有效的舊 token）。
+var CREDENTIAL_REVOCATION_PREFIX = 'credRev_';
 var LOGIN_FAIL_THRESHOLD = 5;
 var LOGIN_FAIL_TTL_SECONDS = 900; // 15 minutes
 var SESSION_TTL_SECONDS = 21600; // 6 hours — also CacheService's own max TTL
@@ -40,19 +68,22 @@ var SESSION_TTL_SECONDS = 21600; // 6 hours — also CacheService's own max TTL
  *
  * 優化輪 ticket 07：也讀出 loginCount/lastLoginAt（新使用者/尚未跑過這次優化
  * 遷移的舊資料列，這兩欄是空字串，正規化成 0 / ''）以及 row_（1-indexed 的
- * 實際列號），login() 需要這個列號才能把新的登入統計寫回同一列。
+ * 實際列號），login_() 需要這個列號才能把新的登入統計寫回同一列。
  * 看板新內容提示功能：也讀出 lastSeenBoards（第 10 欄，JSON 字串原樣讀出，
  * 空字串代表「從沒進去過任何看板」，解析成物件是 boardActivity.js 的工作，
  * 不是這裡）。
  * @提及輪 ticket 05：也讀出 pendingMentions（第 11 欄，JSON 字串原樣讀出，
  * 空字串代表「目前沒有任何待通知的提及」，解析是 mentions.js 的工作）。
+ * `/mycr` 深層複掃 Finding 1：也讀出 credentialVersion（第 12 欄）——沒跑過
+ * 這次遷移的舊資料列這欄是空字串，正規化成 '1'，比照 loginCount 等既有欄位
+ * 「缺值當預設值」的處理方式，不需要另外寫遷移工具回填。
  */
 function getUserRecord_(sheet, userId) {
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) {
     return null;
   }
-  var rows = sheet.getRange(2, 1, lastRow - 1, 11).getValues();
+  var rows = sheet.getRange(2, 1, lastRow - 1, 12).getValues();
   for (var i = 0; i < rows.length; i++) {
     if (rows[i][0] === userId) {
       return {
@@ -65,6 +96,7 @@ function getUserRecord_(sheet, userId) {
         lastLoginAt: rows[i][6] || '',
         lastSeenBoards: rows[i][9] || '',
         pendingMentions: rows[i][10] || '',
+        credentialVersion: rows[i][11] || '1',
         row_: i + 2
       };
     }
@@ -119,7 +151,31 @@ function roleAllowsLogin_(spreadsheet, role) {
  *   lastLoginAt 是「這次登入之前」最後一次登入的時間（第一次登入回傳空字串，
  *   代表尚無記錄——這兩個刻意錯開一格，前端才顯示得出「上一次」是什麼時候）。
  */
-function login(spreadsheet, cache, tokenGenerator, digestFn, nowTimestamp, input) {
+/**
+ * mycr 第 15 輪票 03（見 F-16）：跟 register.js 的 USER_ID_PATTERN 是同一
+ * 個正規表達式的獨立副本，刻意不 require register.js 去共用——這個檔案
+ * 已經有 `_register` 這個 require 入口，但只透過 hashPasswordFor_ 這種
+ * delegate 手法使用，直接拿 register.js 的常數會是不同性質的耦合。單一
+ * 行的正規表達式常數重複，風險遠低於重複一段有邏輯的函式本體（跟
+ * mentions.js 本地複本那類風險不是同一個等級），兩邊定義完全相同時，
+ * GAS 共用全域環境下不管哪一份「贏」都沒有差異。
+ * @param {*} userId
+ * @returns {boolean}
+ */
+function isWellFormedUserIdFormat_(userId) {
+  return typeof userId === 'string' && userId.length >= 4 && userId.length <= 20 && /^[A-Za-z0-9_]+$/.test(userId);
+}
+
+function login_(spreadsheet, cache, tokenGenerator, digestFn, nowTimestamp, input) {
+  // 格式不合法的輸入（可能來自任何訪客隨手打的字串，不一定對應任何真實
+  // 帳號）在這裡就直接拒絕，不建立鎖定快取 key、不寫入 AuditLog、不碰
+  // Users 表——這兩者都是有限資源，見 mycr 掃描報告 F-16。回傳跟密碼
+  // 錯誤完全相同的訊息，不讓這道檢查本身變成「可以用來探測 userId 格式
+  // 規則」的管道。
+  if (!isWellFormedUserIdFormat_(input.userId)) {
+    return { success: false, error: 'userId 或密碼錯誤' };
+  }
+
   var failKey = LOGIN_FAIL_PREFIX + input.userId;
   var currentFailCount = parseInt(cache.get(failKey) || '0', 10);
 
@@ -132,7 +188,14 @@ function login(spreadsheet, cache, tokenGenerator, digestFn, nowTimestamp, input
   var passwordOk = record && verifyPassword(record.passwordHash, record.salt, input.password, digestFn);
 
   if (!passwordOk) {
-    cache.put(failKey, String(currentFailCount + 1), LOGIN_FAIL_TTL_SECONDS);
+    var newFailCount = currentFailCount + 1;
+    cache.put(failKey, String(newFailCount), LOGIN_FAIL_TTL_SECONDS);
+    // A09：只在「這一次失敗剛好讓帳號從未鎖定變成鎖定」的那一刻記一筆，
+    // 不是每次失敗都記——之前累積到第 1~4 次失敗都不寫，避免把單純的
+    // 打錯密碼也算進稀少事件的預算裡。
+    if (newFailCount >= LOGIN_FAIL_THRESHOLD) {
+      appendAuditLogEntryFor_(spreadsheet, nowTimestamp, input.userId, auditActionsFor_().LOGIN_LOCKOUT, input.userId, '');
+    }
     return { success: false, error: 'userId 或密碼錯誤' };
   }
 
@@ -175,6 +238,11 @@ function login(spreadsheet, cache, tokenGenerator, digestFn, nowTimestamp, input
   var token = tokenGenerator();
   cache.remove(failKey);
   cache.put(SESSION_PREFIX + token, input.userId, SESSION_TTL_SECONDS);
+  // `/mycr` 深層複掃 Finding 1：記錄這個 token 建立當下的 credentialVersion，
+  // 供 getSessionRole_ 之後每次比對——如果密碼在這之後被 resetPassword_
+  // 重設過，這個值就會跟 Users 表當下的值對不上，這個 token 立刻失效，
+  // 不用等 SESSION_TTL_SECONDS 自然過期。
+  cache.put(SESSION_VERSION_PREFIX + token, String(record.credentialVersion), SESSION_TTL_SECONDS);
   return {
     success: true,
     token: token,
@@ -230,10 +298,12 @@ function removeSessionSnapshot(cache, token) {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     verifyPassword: verifyPassword,
-    login: login,
+    login_: login_,
     getUserRecord_: getUserRecord_,
     SESSION_PREFIX: SESSION_PREFIX,
     SESSION_SNAPSHOT_PREFIX: SESSION_SNAPSHOT_PREFIX,
+    SESSION_VERSION_PREFIX: SESSION_VERSION_PREFIX,
+    CREDENTIAL_REVOCATION_PREFIX: CREDENTIAL_REVOCATION_PREFIX,
     SESSION_TTL_SECONDS: SESSION_TTL_SECONDS,
     putSessionSnapshot: putSessionSnapshot,
     getSessionSnapshot: getSessionSnapshot,

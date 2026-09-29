@@ -145,3 +145,71 @@ test('deleteArticle decrements the article author\'s articleCount, and separatel
   expect(byId['bob02']).toEqual({ articleCount: 0, replyCount: 3 });   // replied twice, 5 -> 3
   expect(byId['carol03']).toEqual({ articleCount: 0, replyCount: 1 }); // replied once, 2 -> 1
 });
+
+// mycr 第 15 輪票 13（見 F-14）：刪除含大量回覆的文章時，原本每一則
+// 回覆都各自呼叫一次 incrementUserStatFor_（內部又是一次「整欄掃描找
+// userId」+ 一次讀目前值 + 一次寫回），SpreadsheetApp 呼叫次數會隨回覆
+// 數量線性成長，300 則回覆量測出約 7 次/則、超過 2000 次呼叫，這正是
+// 這張票要修的問題（避免長時間佔用全站鎖、避免逼近 GAS 6 分鐘執行上限、
+// 避免留下孤兒資料）。
+//
+// 這裡不直接比對「絕對次數等於多少」（跟實作細節綁太死，之後小幅調整
+// 就要跟著改斷言），改成比較「50 則回覆」跟「5 則回覆」兩種情境下的
+// SpreadsheetApp 呼叫次數差距——如果呼叫次數真的跟回覆數脫鉤，這個差距
+// 應該遠小於回覆數量本身的差距（45 則），而不是接近等比例成長。
+function countSpreadsheetCalls_(ss, fn) {
+  let calls = 0;
+  const wrapSheet = (sheet) => new Proxy(sheet, {
+    get(target, prop) {
+      const value = target[prop];
+      if (typeof value !== 'function') return value;
+      return (...args) => {
+        calls++;
+        const result = value.apply(target, args);
+        if (result && typeof result === 'object' && (prop === 'getRange')) {
+          return new Proxy(result, {
+            get(rt, rp) {
+              const rv = rt[rp];
+              if (typeof rv !== 'function') return rv;
+              return (...rargs) => { calls++; return rv.apply(rt, rargs); };
+            }
+          });
+        }
+        return result;
+      };
+    }
+  });
+  const spy = { getSheetByName: (name) => wrapSheet(ss.getSheetByName(name)) };
+  fn(spy);
+  return calls;
+}
+
+test('deleteArticle keeps SpreadsheetApp call count roughly constant as reply count grows (batched stats update, not one increment call per reply)', () => {
+  function buildScenario(replyCount) {
+    const ss = createFakeSpreadsheet();
+    ensureSchema(ss);
+    seedArticle(ss.getSheetByName('Articles'), { articleId: 'a1', author: 'alice01' });
+    const usersSheet = ss.getSheetByName('Users');
+    usersSheet.appendRow(['alice01', 'h', 's', 'user', "'2026/07/01 00:00:00", 0, '', 1, 0]);
+    for (let i = 0; i < replyCount; i++) {
+      const author = 'author' + String(i % 10).padStart(2, '0'); // 10 個不同作者輪流
+      if (i < 10) usersSheet.appendRow([author, 'h', 's', 'user', "'2026/07/01 00:00:00", 0, '', 0, 5]);
+      seedReply(ss.getSheetByName('Replies'), { replyId: 'r' + i, articleId: 'a1', author: author });
+    }
+    return ss;
+  }
+
+  const small = buildScenario(5);
+  const large = buildScenario(50);
+  const lock1 = createFakeLock();
+  const lock2 = createFakeLock();
+
+  const smallCalls = countSpreadsheetCalls_(small, (spy) => deleteArticle(spy, lock1, 'alice01', 'a1'));
+  const largeCalls = countSpreadsheetCalls_(large, (spy) => deleteArticle(spy, lock2, 'alice01', 'a1'));
+
+  // 回覆數差了 45 則；如果呼叫次數還是線性跟著回覆數走，largeCalls 應該
+  // 比 smallCalls 多出遠大於 45 次（修法前實測約 7 次/則，45 則會多出
+  // 超過 300 次）。批次化之後，兩者的差距應該小到跟回覆數本身的差距
+  // 不成比例——這裡抓一個遠比「線性成長」寬鬆、但仍然有意義的上限。
+  expect(largeCalls - smallCalls).toBeLessThan(45);
+});

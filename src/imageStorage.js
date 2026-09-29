@@ -26,6 +26,41 @@ var ROOT_FOLDER_NAME = 'BBS 圖片';
 // 路徑）都用同一個數字，避免兩處各寫一次容易兜不起來。
 var MAX_IMAGES_PER_ARTICLE = 99;
 
+// 效能/資安複查時發現的問題（見對話紀錄，`/mycr` 深層複掃）：Index.html
+// 的 MAX_IMAGE_SIZE_BYTES（5MB）只在瀏覽器端檢查，這裡是伺服器端對應的
+// 上限，數字必須跟前端那份保持一致——前後端邊界沒有共用模組（見 Code.js
+// 檔頭說明），任一邊調整都要記得同步改另一邊，維護方式跟 MAX_IMAGES_PER_ARTICLE
+// 現有的做法相同。
+var MAX_IMAGE_DATA_BYTES = 5 * 1024 * 1024;
+
+/**
+ * 效能/資安複查時發現的問題（見對話紀錄）：uploadImageBatch 原本只檢查
+ * 圖片張數與格式，沒有檢查單張圖片的實際資料大小——已經登入且有發文權限
+ * 的使用者，可以繞過瀏覽器端的 5MB 檢查，直接呼叫上傳端點送出遠大於
+ * 5MB 的 base64 payload，浪費 Drive 儲存空間與執行時間。這支函式在真正
+ * 呼叫 Drive 上傳之前，於 Code.js 的驗證迴圈裡跟 validateImageMimeType
+ * 一起被呼叫（跟這個檔案其他 validate* 函式一樣的分工：純邏輯留在這裡
+ * 好測試，GAS 呼叫留在 Code.js）。
+ *
+ * 用 base64 字串長度換算回原始位元組數（每 4 字元代表 3 bytes，扣掉結尾
+ * 補零字元 `=` 的數量），不需要真的解碼整個字串——效能評估見對話紀錄：
+ * 這是微秒級的字串運算，跟這支函式所在流程真正的成本大頭（Drive 網路
+ * I/O）比起來可以忽略，而且是在花掉那筆成本「之前」就先擋下超標的圖片。
+ * @param {*} base64Data
+ * @returns {{valid: boolean, error?: string}}
+ */
+function validateImageDataSize(base64Data) {
+  if (typeof base64Data !== 'string' || base64Data.length === 0) {
+    return { valid: false, error: '圖片資料異常' };
+  }
+  var padding = (base64Data.match(/=+$/) || [''])[0].length;
+  var approxBytes = (base64Data.length * 3 / 4) - padding;
+  if (approxBytes > MAX_IMAGE_DATA_BYTES) {
+    return { valid: false, error: '圖片檔案大小超過上限' };
+  }
+  return { valid: true };
+}
+
 /**
  * @param {number} count
  * @returns {{valid: boolean, error?: string}}
@@ -203,8 +238,17 @@ function resolveImageSlots(imageSlots, existingImageUrls) {
   for (var i = 0; i < imageSlots.length; i++) {
     var slot = imageSlots[i];
     if (slot && typeof slot === 'object' && slot.data) {
-      newImages.push(slot);
-      newImageSlotIndexes.push(i);
+      // `/mycr` 全新視角複掃 Finding 1：這條分支原本把任何帶 .data 的物件
+      // 都當成合法的新圖片、直接收進 newImages 待上傳，完全不管呼叫者是
+      // 誰——已確認現有前端（Index.html 的 buildImageSlotsPayload）從來
+      // 不會送出這種形狀給 editArticleFromForm，一律先透過 uploadImageBatch
+      // （有完整權限/格式/大小驗證）拿到連結字串再送出純字串陣列。這條
+      // 分支對合法呼叫端是死路徑，但直接呼叫 RPC（跳過前端）仍然完全可
+      // 達，會讓任何人不需要登入、不需要任何權限就能觸發真正的 Drive
+      // 寫入。跟這支函式既有的「字串不在白名單」處理方式一致，直接拒絕
+      // 整個請求，不再靜默收下。完整攻擊鏈見
+      // gas-bbs-mycr-finding1-editarticle-upload-fix-spec.md。
+      return { resolved: null, newImages: [], newImageSlotIndexes: [], error: '不支援的圖片格式，請重新上傳' };
     } else if (typeof slot === 'string') {
       if (slot !== '' && existing.indexOf(slot) === -1) {
         return { resolved: null, newImages: [], newImageSlotIndexes: [], error: '圖片資料異常' };
@@ -226,8 +270,10 @@ if (typeof module !== 'undefined' && module.exports) {
     compactImageUrls: compactImageUrls,
     validateImageCount: validateImageCount,
     validateImageMimeType: validateImageMimeType,
+    validateImageDataSize: validateImageDataSize,
     ALLOWED_IMAGE_MIME_TYPES: ALLOWED_IMAGE_MIME_TYPES,
     MAX_IMAGES_PER_ARTICLE: MAX_IMAGES_PER_ARTICLE,
+    MAX_IMAGE_DATA_BYTES: MAX_IMAGE_DATA_BYTES,
     ROOT_FOLDER_PROPERTY_KEY: ROOT_FOLDER_PROPERTY_KEY,
     ROOT_FOLDER_NAME: ROOT_FOLDER_NAME
   };

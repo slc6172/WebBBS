@@ -10,30 +10,23 @@ function getUserRecordFor_(sheet, userId) {
 }
 
 function getRolePermissionsFor_(spreadsheet, role) {
-  return (_permissionsModule ? _permissionsModule.getRolePermissions : getRolePermissions)(spreadsheet, role);
+  return (_permissionsModule ? _permissionsModule.getRolePermissions_ : getRolePermissions_)(spreadsheet, role);
 }
 
 function boardAllowsRoleByIdFor_(spreadsheet, boardId, role) {
   return (_boardsModule ? _boardsModule.boardAllowsRoleById : boardAllowsRoleById)(spreadsheet, boardId, role);
 }
 
-// 這裡本來想直接 require postArticle.js 重用它的 escapeFormulaInjection，
-// 但 postArticle.js 已經 require 這個檔案（拿 recordMentionsForContent_），
-// 反過來再 require 回去會形成循環 require——Node 對這種情況的行為取決於
-// 兩個檔案哪一個先被載入，會讓「後載入的那個」在還沒真的 require 進來時就
-// 先拿到對方一個還沒填好的 module.exports（空物件），呼叫到裡面的函式才會
-// 炸開，require 當下不會報錯。這正好是 login.js 裡同一類問題的說明（見該
-// 檔案 getSessionRole 附近的註解）——與其去動現有那條已經在運作的
-// require 方向，這裡直接放一份小小的本地複本；escapeFormulaInjection 只有
-// 5 行、純函式、邏輯穩定不太會之後跑掉，重複這一份的風險遠低於循環
-// require 的風險。
-var FORMULA_TRIGGER_CHARS = ['=', '+', '-', '@'];
-function escapeFormulaInjectionFor_(value) {
-  if (typeof value === 'string' && value.length > 0 && FORMULA_TRIGGER_CHARS.indexOf(value.charAt(0)) !== -1) {
-    return "'" + value;
-  }
-  return value;
-}
+// mycr 第 15 輪票 05：這個檔案原本在這裡放了一份 escapeFormulaInjection
+// 的本地複本（見 round-14 交接文件「尚未處理」清單），因為當時
+// postArticle.js require 這個檔案，反向 require 會形成循環。現在
+// escapeFormulaInjection 的正本已經搬到 formulaInjection.js——一個完全
+// 沒有任何 require 依賴的葉節點模組，不會有循環風險。但這個檔案裡唯一
+// 呼叫這份本地複本的地方（buildMentionEntry_ 對 articleTitle 的跳脫）
+// 本身也在票 05 一併移除了（articleTitle 是巢狀在 JSON 字串裡的欄位，
+// 不是獨立儲存格，跳脫從來沒有真的防到 Sheets 層級的風險，詳見
+// buildMentionEntry_ 上方的說明）——這裡不需要重新委派到
+// formulaInjection.js，直接刪掉這個檔案裡用不到的函式即可。
 
 // 跟 validateUserId（register.js）的格式規則一致：4~20 個英數字/底線。
 var MENTION_PATTERN = /@([A-Za-z0-9_]{4,20})/g;
@@ -70,6 +63,37 @@ function extractMentionCandidates_(text) {
     }
   }
   return result;
+}
+
+// API4（換角度複查輪，對照 OWASP API Security Top 10 2023——Unrestricted
+// Resource Consumption）：一篇文章/回覆能 @提及的人數本來完全沒有上限，
+// recordMentionsForContent_ 對每一個候選人都要讀 Users/Permission/Boards
+// 三張表、搶一次全站鎖才能寫入，內容上限一萬字理論上塞得下數百個候選人，
+// 沒有上限代表單次請求的試算表讀寫次數跟鎖等待時間都沒有上限。20 這個
+// 數字：一篇公開討論串貼文合理提及超過 20 個人已經是異常使用方式，跟
+// MAX_PENDING_MENTIONS=50 是同一種「抓一個明顯遠高於正常使用情境、但
+// 足以擋住異常量的門檻」的抓法。
+//
+// 設計成拒絕整篇貼文（跟標題/內容驗證同一個模式），不是靜默截斷：
+// 「這篇文章打了幾個 @」是發文者自己完全看得到、自己能修改的事，跟
+// 「@bob02 到底存不存在」這種發文者不一定知道的事是不同類型的問題，
+// 後者才適合靜默略過（recordMentionsForContent_ 既有的行為，這裡不變）。
+var MAX_MENTIONS_PER_POST = 20;
+
+/**
+ * 純函式：檢查文章/回覆內容裡 @提及的相異人數是否超過上限。不觸碰任何
+ * 試算表——只對呼叫端已經在記憶體裡的字串跑一次 regex，跟真正花錢的
+ * SpreadsheetApp 讀寫次數完全無關；這個檢查真正的效益，是讓
+ * recordMentionsForContent_ 那個目前沒有上限的迴圈永遠不會被餵超過
+ * MAX_MENTIONS_PER_POST 個候選人。
+ * @param {string} text
+ * @returns {{valid: boolean, error?: string}}
+ */
+function validateMentionCount_(text) {
+  if (extractMentionCandidates_(text).length > MAX_MENTIONS_PER_POST) {
+    return { valid: false, error: '一篇最多只能 @提及 ' + MAX_MENTIONS_PER_POST + ' 人，請減少後再送出' };
+  }
+  return { valid: true };
 }
 
 /**
@@ -125,11 +149,27 @@ function appendPendingMention_(rawJson, entry) {
  * @returns {{mentionedBy: string, boardId: string, articleId: string, articleTitle: string, createdAt: string}}
  */
 function buildMentionEntry_(params) {
+  // mycr 第 15 輪票 05：這裡原本對 articleTitle 套用
+  // escapeFormulaInjectionFor_，理由是「跟 postArticle.js 對 title 做
+  // 同一種跳脫，防禦縱深」——但這個欄位是先組成 JS 物件、整包
+  // JSON.stringify 之後才寫進 Users 表第 11 欄「一整格」，不是自己獨立
+  // 佔一格。Sheets 的公式/型別誤判只發生在「整格」層級：這一整格的值
+  // 是 JSON.stringify 後的陣列字串，永遠以 `[` 開頭，不可能被誤判成
+  // 公式或被轉換型別，所以對 articleTitle 這個巢狀欄位做跳脫，從來沒有
+  // 真的防到 Sheets 層級的任何風險。
+  //
+  // escapeFormulaInjection 現在改成「非空字串一律加前綴」（見
+  // formulaInjection.js），如果繼續在這裡呼叫，會讓前綴字元變成
+  // JSON.parse 之後 articleTitle 裡真的看得到的一個字元（Sheets 對整格
+  // 開頭撇號的自動去除，不會處理巢狀在字串內部的撇號）——等於讓每一則
+  // @提及通知的標題都多一個游離的撇號，這是先前只在標題剛好以 =+-@
+  // 開頭時才會出現的既有小瑕疵，現在會擴大成每一則通知都出現。拿掉這個
+  // 呼叫點：不影響任何真實存在的防護，同時修掉這個一併發現的既有瑕疵。
   return {
     mentionedBy: params.mentionedBy,
     boardId: params.boardId,
     articleId: params.articleId,
-    articleTitle: escapeFormulaInjectionFor_(params.articleTitle),
+    articleTitle: params.articleTitle,
     createdAt: params.timestamp
   };
 }
@@ -185,13 +225,32 @@ function recordMentionsForContent_(spreadsheet, lock, params) {
       timestamp: params.timestamp
     });
 
-    lock.waitLock(10000);
+    // mycr 第 15 輪票 04（見 F-05）：這支函式在呼叫端的文章/回覆列都已經
+    // 寫入試算表、呼叫端自己的寫入鎖也已經釋放之後才執行——如果這裡讓
+    // 例外往上傳，使用者會看到「發文/回覆失敗」，但內容其實已經寫入，
+    // 重試就會重複發文。取鎖逾時或鎖內寫入本身失敗，都只當成「這一位
+    // 提及對象沒收到通知」處理，記錄下來、繼續處理下一位候選人，不中斷
+    // 整個迴圈——跟這支函式其他地方（不存在的 userId、鎖內重讀發現列
+    // 被刪除）採用同一種「靜默略過、繼續處理下一個」的既有慣例一致。
+    var lockAcquired = false;
     try {
+      lock.waitLock(10000);
+      lockAcquired = true;
       var freshRecord = getUserRecordFor_(usersSheet, candidateUserId);
-      var updated = appendPendingMention_(freshRecord ? freshRecord.pendingMentions : '', entry);
+      if (!freshRecord) {
+        return; // 資安複審（`/mycr` 深層複掃）：外層存在性檢查通過之後、真正
+                 // 拿到鎖之前的極窄時間窗內，管理者剛好手動刪除這一列——比照
+                 // 這支函式其他地方「靜默略過、繼續處理下一個候選人」的既有
+                 // 慣例，不讓這裡的未防護 null 存取拋出例外中斷整個迴圈。
+      }
+      var updated = appendPendingMention_(freshRecord.pendingMentions, entry);
       usersSheet.getRange(freshRecord.row_, 11, 1, 1).setValues([[updated]]);
+    } catch (e) {
+      console.error('recordMentionsForContent_: 處理 @' + candidateUserId + ' 的提及時發生錯誤，略過這一位，繼續處理其他候選人 — ' + e);
     } finally {
-      lock.releaseLock();
+      if (lockAcquired) {
+        lock.releaseLock();
+      }
     }
   });
 }
@@ -199,7 +258,9 @@ function recordMentionsForContent_(spreadsheet, lock, params) {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     MAX_PENDING_MENTIONS: MAX_PENDING_MENTIONS,
+    MAX_MENTIONS_PER_POST: MAX_MENTIONS_PER_POST,
     extractMentionCandidates_: extractMentionCandidates_,
+    validateMentionCount_: validateMentionCount_,
     getPendingMentions_: getPendingMentions_,
     appendPendingMention_: appendPendingMention_,
     buildMentionEntry_: buildMentionEntry_,

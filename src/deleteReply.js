@@ -26,9 +26,10 @@
 var _permissionsModule = (typeof require !== 'undefined') ? require('./permissions') : null;
 var _userStatsModule = (typeof require !== 'undefined') ? require('./userStats') : null;
 var _boardsModule = (typeof require !== 'undefined') ? require('./boards') : null;
+var _auditLogModule = (typeof require !== 'undefined') ? require('./auditLog') : null;
 
 function getRolePermissionsFor_(spreadsheet, role) {
-  return (_permissionsModule ? _permissionsModule.getRolePermissions : getRolePermissions)(spreadsheet, role);
+  return (_permissionsModule ? _permissionsModule.getRolePermissions_ : getRolePermissions_)(spreadsheet, role);
 }
 
 function boardAllowsRoleByIdFor_(spreadsheet, boardId, role) {
@@ -37,6 +38,14 @@ function boardAllowsRoleByIdFor_(spreadsheet, boardId, role) {
 
 function incrementUserStatFor_(usersSheet, userId, statName, delta) {
   return (_userStatsModule ? _userStatsModule.incrementUserStat : incrementUserStat)(usersSheet, userId, statName, delta);
+}
+
+function appendAuditLogEntryFor_(spreadsheet, nowTimestamp, actor, action, target, detail) {
+  return (_auditLogModule ? _auditLogModule.appendAuditLogEntry_ : appendAuditLogEntry_)(spreadsheet, nowTimestamp, actor, action, target, detail);
+}
+
+function auditActionsFor_() {
+  return _auditLogModule ? _auditLogModule.AUDIT_ACTIONS : AUDIT_ACTIONS;
 }
 
 /**
@@ -69,7 +78,14 @@ function findReplyRowAndAuthor_(sheet, replyId) {
  * single read of columns A:I, skipping the header row. Returns null if
  * articleId isn't found.
  */
-function findArticleInfoForReply_(sheet, articleId) {
+// mycr 第 15 輪票 06（見 F-10）：原本這裡跟 postReply.js 定義了同名但
+// 內容不同的 findArticleInfoForReply_——GAS 把所有檔案併成同一個全域
+// 命名空間，同名函式會互相覆蓋，實際生效的版本取決於部署時的檔案載入
+// 順序（見 test/codeRpcIntegration.test.js 的迴歸測試）。這支函式不需要
+// title（刪除回覆不需要顯示文章標題），跟 postReply.js 那份需要 title
+// 的版本本來就是兩個不同的用途，改名而不是硬湊成同一份實作，才不會讓
+// deleteReply.js 的呼叫端多背一個用不到的欄位。
+function findArticleInfoForDeleteReply_(sheet, articleId) {
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) {
     return null;
@@ -115,9 +131,11 @@ function deleteReplyUnlocked_(spreadsheet, found, articleInfo) {
  * @param {string} articleId
  * @param {string} replyId
  * @param {boolean} [isAdmin] - when true, skips the author===requestingUserId check.
+ * @param {string} [nowTimestamp] - A09：只有 isAdmin 代管別人回覆這種情況
+ *   才會用到，寫進 AuditLog 的 timestamp 欄位。
  * @returns {{success: boolean, error?: string}}
  */
-function deleteReply(spreadsheet, lock, requestingUserId, articleId, replyId, isAdmin) {
+function deleteReply(spreadsheet, lock, requestingUserId, articleId, replyId, isAdmin, nowTimestamp) {
   lock.waitLock(10000);
   try {
     var repliesSheet = spreadsheet.getSheetByName('Replies');
@@ -136,7 +154,13 @@ function deleteReply(spreadsheet, lock, requestingUserId, articleId, replyId, is
       return { success: false, error: '權限不足' };
     }
 
-    var articleInfo = findArticleInfoForReply_(spreadsheet.getSheetByName('Articles'), found.articleId);
+    // A09：只有「管理員刪的不是自己發的回覆」才算數，理由跟
+    // deleteArticle.js 完全一樣。
+    if (isAdmin && found.author !== requestingUserId) {
+      appendAuditLogEntryFor_(spreadsheet, nowTimestamp, requestingUserId, auditActionsFor_().ADMIN_DELETE_OTHERS_CONTENT, replyId, '回覆，原作者：' + found.author + '，所屬文章：' + articleId);
+    }
+
+    var articleInfo = findArticleInfoForDeleteReply_(spreadsheet.getSheetByName('Articles'), found.articleId);
     return deleteReplyUnlocked_(spreadsheet, found, articleInfo);
   } finally {
     lock.releaseLock();
@@ -157,9 +181,9 @@ function deleteReply(spreadsheet, lock, requestingUserId, articleId, replyId, is
  * on the same lock twice); it calls the shared deleteReplyUnlocked_
  * directly instead, same convention as createArticleUnlocked_.
  */
-function deleteReplyForRole(spreadsheet, lock, role, requestingUserId, articleId, replyId) {
+function deleteReplyForRole_(spreadsheet, lock, role, requestingUserId, articleId, replyId, nowTimestamp) {
   if (role === 'admin') {
-    return deleteReply(spreadsheet, lock, requestingUserId, articleId, replyId, true);
+    return deleteReply(spreadsheet, lock, requestingUserId, articleId, replyId, true, nowTimestamp);
   }
   if (!getRolePermissionsFor_(spreadsheet, role).replyDeleteOwn) {
     return { success: false, error: '權限不足' };
@@ -189,7 +213,7 @@ function deleteReplyForRole(spreadsheet, lock, role, requestingUserId, articleId
     }
 
     var articlesSheet = spreadsheet.getSheetByName('Articles');
-    var articleInfo = findArticleInfoForReply_(articlesSheet, found.articleId);
+    var articleInfo = findArticleInfoForDeleteReply_(articlesSheet, found.articleId);
     if (articleInfo === null) {
       return { success: false, error: '文章不存在' };
     }
@@ -204,5 +228,5 @@ function deleteReplyForRole(spreadsheet, lock, role, requestingUserId, articleId
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { deleteReply: deleteReply, deleteReplyForRole: deleteReplyForRole };
+  module.exports = { deleteReply: deleteReply, deleteReplyForRole_: deleteReplyForRole_ };
 }

@@ -1,5 +1,14 @@
-const { ensureSchema } = require('../src/schema');
+const {
+  ensureSchema,
+  ensureSchemaIfNeeded_,
+  SCHEMA_VERSION,
+  SCHEMA_VERSION_PROPERTY_KEY,
+  SHEET_HEADERS,
+  TIMESTAMP_COLUMNS,
+  DEFAULT_PERMISSION_ROWS
+} = require('../src/schema');
 const { createFakeSpreadsheet } = require('./doubles/fakeSpreadsheet');
+const { createFakeProperties } = require('./doubles/fakeProperties');
 
 test('ensureSchema creates all four sheets with the correct header rows', () => {
   const ss = createFakeSpreadsheet();
@@ -7,7 +16,7 @@ test('ensureSchema creates all four sheets with the correct header rows', () => 
   ensureSchema(ss);
 
   const headers = {
-    Users: ss.getSheetByName('Users').getRange(1, 1, 1, 11).getValues()[0],
+    Users: ss.getSheetByName('Users').getRange(1, 1, 1, 12).getValues()[0],
     Boards: ss.getSheetByName('Boards').getRange(1, 1, 1, 7).getValues()[0],
     Articles: ss.getSheetByName('Articles').getRange(1, 1, 1, 10).getValues()[0],
     Replies: ss.getSheetByName('Replies').getRange(1, 1, 1, 5).getValues()[0],
@@ -15,7 +24,8 @@ test('ensureSchema creates all four sheets with the correct header rows', () => 
   };
 
   expect(headers).toEqual({
-    Users: ['userId', 'passwordHash', 'salt', 'role', 'createdAt', 'loginCount', 'lastLoginAt', 'articleCount', 'replyCount', 'lastSeenBoards', 'pendingMentions'],
+    // `/mycr` 深層複掃 Finding 1：credentialVersion（第 12 欄）
+    Users: ['userId', 'passwordHash', 'salt', 'role', 'createdAt', 'loginCount', 'lastLoginAt', 'articleCount', 'replyCount', 'lastSeenBoards', 'pendingMentions', 'credentialVersion'],
     Boards: ['boardId', 'boardName', 'description', 'sortOrder', 'latestArticleAt', 'latestReplyAt', 'AllowRoles'],
     Articles: ['articleId', 'boardId', 'title', 'author', 'content', 'createdAt', 'editedAt', 'editedBy', 'replyCount', 'imageUrls'],
     Replies: ['replyId', 'articleId', 'author', 'content', 'createdAt'],
@@ -188,4 +198,76 @@ test('ensureSchema never re-touches AllowRoles once the column already exists, e
   ensureSchema(ss);
 
   expect(ss.getSheetByName('Boards').getRange(2, 7, 2, 1).getValues()).toEqual([['ALL'], ['admin']]);
+});
+
+// mycr 第 15 輪票 14（見 F-07）：ensureSchemaIfNeeded_ 是給 Code.js 的
+// doGet 用的版本閘門——只在「已套用版本」比程式碼裡的 SCHEMA_VERSION
+// 舊的時候，才真的呼叫 ensureSchema 做完整檢查；否則只讀一個屬性值，
+// 完全不碰 SpreadsheetApp。ensureSchema 本身的簽名/行為不受影響，這裡
+// 只測新加的閘門函式。
+describe('ensureSchemaIfNeeded_', () => {
+  test('runs the full ensureSchema and records the current version when no version has been recorded yet (first-ever deployment)', () => {
+    const ss = createFakeSpreadsheet();
+    const properties = createFakeProperties();
+
+    ensureSchemaIfNeeded_(ss, properties);
+
+    expect(ss.getSheetByName('Users')).toBeTruthy(); // 真的執行了完整檢查
+    expect(properties.get(SCHEMA_VERSION_PROPERTY_KEY)).toBe(String(SCHEMA_VERSION));
+  });
+
+  test('skips calling ensureSchema entirely when the recorded version already matches the current SCHEMA_VERSION', () => {
+    const ss = createFakeSpreadsheet();
+    const properties = createFakeProperties();
+    properties.set(SCHEMA_VERSION_PROPERTY_KEY, String(SCHEMA_VERSION));
+
+    let getSheetByNameCalls = 0;
+    const spy = { getSheetByName: (name) => { getSheetByNameCalls++; return ss.getSheetByName(name); }, insertSheet: ss.insertSheet.bind(ss) };
+
+    ensureSchemaIfNeeded_(spy, properties);
+
+    expect(getSheetByNameCalls).toBe(0); // 完全沒有碰 SpreadsheetApp
+  });
+
+  test('re-runs the full ensureSchema when the recorded version is older than the current SCHEMA_VERSION', () => {
+    const ss = createFakeSpreadsheet();
+    const properties = createFakeProperties();
+    properties.set(SCHEMA_VERSION_PROPERTY_KEY, String(SCHEMA_VERSION - 1));
+
+    ensureSchemaIfNeeded_(ss, properties);
+
+    expect(ss.getSheetByName('Users')).toBeTruthy();
+    expect(properties.get(SCHEMA_VERSION_PROPERTY_KEY)).toBe(String(SCHEMA_VERSION));
+  });
+
+  test('passes buildRoleValidationRule through to the underlying ensureSchema call', () => {
+    const ss = createFakeSpreadsheet();
+    const properties = createFakeProperties();
+    let calledWithRoles = null;
+    const buildRule = (roles) => { calledWithRoles = roles; return {}; };
+
+    ensureSchemaIfNeeded_(ss, properties, buildRule);
+
+    expect(calledWithRoles).toEqual(['newbie', 'user', 'admin']);
+  });
+});
+
+// mycr 第 15 輪票 14：守門測試——目前的 schema 結構定義（表頭、時間戳欄位
+// 設定、預設權限列）算出一個穩定的指紋字串，跟這裡寫死的「已知良好」
+// 字串比對。改了上面任何一個定義、卻忘記把 SCHEMA_VERSION 往上調，這個
+// 測試就會失敗——不用等到真的在 GAS 上發現閘門沒有生效才發現忘記做這
+// 一步。
+//
+// 故意刻意調整 SHEET_HEADERS/TIMESTAMP_COLUMNS/DEFAULT_PERMISSION_ROWS
+// 其中任何一個，並且跟著把 SCHEMA_VERSION 加 1、把下面這個字串換成新的
+// 指紋（跑一次這個測試、把它印出來的「Received」貼過來即可）之後，這個
+// 測試就會恢復綠燈——這是刻意設計成這樣，不是要你永遠不能改 schema。
+test('schema definition fingerprint matches SCHEMA_VERSION — bump SCHEMA_VERSION and update this fingerprint together whenever SHEET_HEADERS/TIMESTAMP_COLUMNS/DEFAULT_PERMISSION_ROWS changes', () => {
+  const fingerprint = JSON.stringify({ SHEET_HEADERS, TIMESTAMP_COLUMNS, DEFAULT_PERMISSION_ROWS });
+  const knownGoodFingerprints = {
+    1: '{"SHEET_HEADERS":{"Users":["userId","passwordHash","salt","role","createdAt","loginCount","lastLoginAt","articleCount","replyCount","lastSeenBoards","pendingMentions","credentialVersion"],"Boards":["boardId","boardName","description","sortOrder","latestArticleAt","latestReplyAt","AllowRoles"],"Articles":["articleId","boardId","title","author","content","createdAt","editedAt","editedBy","replyCount","imageUrls"],"Replies":["replyId","articleId","author","content","createdAt"],"Permission":["role","articleRead","articlePost","articleManageOwn","replyRead","replyPost","replyDeleteOwn","leaderboard","login"],"LineGroupBoards":["groupId","groupName","boardId","lastDigestDate","todayDigestCount"],"LineStaging":["groupId","messageTime","displayName","messageType","content","webhookEventId","recalled"],"LineUserId":["userId","displayId"],"AuditLog":["timestamp","actor","action","target","detail"]},"TIMESTAMP_COLUMNS":{"Users":[5,7],"Boards":[5,6],"Articles":[6,7],"Replies":[5],"LineGroupBoards":[4],"LineStaging":[2],"AuditLog":[1]},"DEFAULT_PERMISSION_ROWS":[["newbie",false,false,false,false,false,false,false,true],["user",true,true,true,true,true,true,true,true],["admin",true,true,true,true,true,true,true,true]]}'
+  };
+
+  expect(SCHEMA_VERSION in knownGoodFingerprints).toBe(true);
+  expect(fingerprint).toBe(knownGoodFingerprints[SCHEMA_VERSION]);
 });

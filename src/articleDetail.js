@@ -9,9 +9,14 @@
  * sibling left to keep around.
  */
 var _permissionsModule = (typeof require !== 'undefined') ? require('./permissions') : null;
+var _textCoercionModule = (typeof require !== 'undefined') ? require('./textCoercion') : null;
 
 function snapshotIncludesBoardFor_(snapshot, boardId) {
   return (_permissionsModule ? _permissionsModule.snapshotIncludesBoard : snapshotIncludesBoard)(snapshot, boardId);
+}
+
+function toSafeDisplayStringFor_(value) {
+  return (_textCoercionModule ? _textCoercionModule.toSafeDisplayString_ : toSafeDisplayString_)(value);
 }
 
 /**
@@ -36,9 +41,9 @@ function getArticleById(spreadsheet, articleId) {
       return {
         articleId: rows[i][0],
         boardId: rows[i][1],
-        title: rows[i][2],
+        title: toSafeDisplayStringFor_(rows[i][2]),
         author: rows[i][3],
-        content: rows[i][4],
+        content: toSafeDisplayStringFor_(rows[i][4]),
         createdAt: rows[i][5],
         editedAt: rows[i][6],
         editedBy: rows[i][7],
@@ -91,7 +96,7 @@ function listRepliesByArticle(spreadsheet, articleId) {
       replyId: rows[i][0],
       articleId: rows[i][1],
       author: rows[i][2],
-      content: rows[i][3],
+      content: toSafeDisplayStringFor_(rows[i][3]),
       createdAt: rows[i][4]
     });
   }
@@ -121,7 +126,7 @@ function listRepliesByArticle(spreadsheet, articleId) {
  * @param {string} articleId
  * @returns {{article: Object|null, replies: Array}}
  */
-function getArticleDetailForSnapshot(spreadsheet, snapshot, articleId) {
+function getArticleDetailForSnapshot_(spreadsheet, snapshot, articleId) {
   var article = getArticleById(spreadsheet, articleId);
   if (!article) {
     return { article: null, replies: [] };
@@ -143,6 +148,6 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     getArticleById: getArticleById,
     listRepliesByArticle: listRepliesByArticle,
-    getArticleDetailForSnapshot: getArticleDetailForSnapshot
+    getArticleDetailForSnapshot_: getArticleDetailForSnapshot_
   };
 }

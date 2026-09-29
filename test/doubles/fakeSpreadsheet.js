@@ -103,6 +103,12 @@ function createFakeSheet(name) {
     deleteRow: function (rowNum) {
       rows.splice(rowNum - 1, 1);
     },
+    // mycr 第 15 輪票 13：對應真實 GAS 的 Sheet.deleteRows(rowPosition,
+    // howMany) —— 一次刪除連續多列，只算一次 SpreadsheetApp 呼叫，不是
+    // howMany 次。
+    deleteRows: function (rowStart, howMany) {
+      rows.splice(rowStart - 1, howMany);
+    },
     _getNumberFormatCalls: function () {
       return numberFormatCalls;
     },

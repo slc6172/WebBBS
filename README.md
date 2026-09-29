@@ -24,11 +24,11 @@
 
 - **前端**：單一 `Index.html`，透過 `HtmlService` 提供的 SPA，所有前後端溝通都走 `google.script.run`。前端邏輯沒有自動化測試（GAS 環境下瀏覽器端程式碼無法像後端一樣同時被 Node 測試與 GAS 執行共用同一份原始碼），行為以手動驗收清單把關。
 - **後端有兩個進入點**：`Code.js` 是網站的 `doGet` / glue 層，負責讀 session、呼叫下方各個邏輯模組、決定要不要包成 `JSON.stringify`；`lineBotGlue.js` 是 LINE Messaging API 的 `doPost` / glue 層，處理群組訊息接收與彙整發文，跟 `Code.js` 是完全獨立的入口，各自維護。其餘 `src/*.js` 各自是獨立的邏輯模組（文章、回覆、看板、權限、圖片……），彼此透過檔案內的小型 wrapper 互相呼叫。
-- **資料庫**：Google 試算表，8 張工作表：
+- **資料庫**：Google 試算表，9 張工作表：
 
   | 工作表 | 用途 |
   |---|---|
-  | `Users` | 帳號、密碼雜湊、角色、登入/發文/回覆統計、看板瀏覽時間戳（未讀徽章用）、待顯示的 @提及通知 |
+  | `Users` | 帳號、密碼雜湊、角色、登入/發文/回覆統計、看板瀏覽時間戳（未讀徽章用）、待顯示的 @提及通知、密碼重設用的 `credentialVersion` |
   | `Boards` | 看板清單、看板活動時間戳、`AllowRoles` |
   | `Articles` | 文章內容、圖片連結、編輯紀錄 |
   | `Replies` | 回覆內容 |
@@ -36,6 +36,7 @@
   | `LineGroupBoards` | LINE 群組白名單、群組對看板的對應關係（管理者手動維護） |
   | `LineStaging` | LINE 對話彙整前的暫存區，成功張貼成文章後即清空 |
   | `LineUserId` | LINE `userId` → 顯示名稱的對應表（管理者手動維護，見下方說明） |
+  | `AuditLog` | 稀少的高價值安全事件紀錄（登入鎖定、管理員重設密碼、管理員代管他人文章/回覆），不是每個請求都寫一筆的完整存取 log |
 
 ### 雙環境相容寫法
 
@@ -72,16 +73,14 @@ gas-bbs/
 │   ├── imageStorage.js         #   圖片上傳存 Google Drive
 │   ├── contentVersion.js       #   版本戳差異化更新
 │   ├── timestampNormalizer.js  #   舊資料時間格式正規化
-│   ├── bootstrap.js / ping.js  #   環境自我檢查工具
-│   ├── AdminTools.js           #   僅供管理者在 Apps Script 編輯器手動執行（見下方說明）
+│   ├── bootstrap.js            #   環境自我檢查工具
 │   ├── lineBotGlue.js          #   doPost 入口：webhook 事件路由、訊息接收、彙整發文、每日 trigger
 │   ├── lineGroupBoard.js       #   LINE 群組白名單查詢、換日序號計算
 │   ├── lineMessageClassify.js  #   LINE 訊息型態分類（文字/圖片/貼圖等）
-│   ├── lineStaging.js          #   暫存去重、收回標記
+│   ├── lineStaging.js          #   暫存去重、收回標記、寫入前的公式注入跳脫
 │   ├── lineUserId.js           #   LINE userId → 顯示名稱對應表查詢（見下方說明）
 │   ├── lineDigestThreshold.js  #   分段收割門檻判斷
-│   ├── lineArticleTitle.js / lineArticleContent.js  #   彙整文章的標題規則、內文排版
-│   └── test.js                 #   僅供手動在 Apps Script 編輯器執行的維運工具（見下方說明）
+│   └── lineArticleTitle.js / lineArticleContent.js  #   彙整文章的標題規則、內文排版
 ├── test/                     # Vitest 單元測試，一比一對應 src/*.js 的每個匯出函式
 │   └── doubles/                #   手刻的 SpreadsheetApp / LockService / CacheService / DriveApp / PropertiesService 測試替身
 ├── tools/                    # 一次性維運工具（不是正式程式的一部分，用完可從 GAS 專案刪除）
@@ -109,7 +108,7 @@ npm install -g @google/clasp
 clasp login
 ```
 
-在 GAS 編輯器的「專案設定」複製指令碼 ID，於本機 `src/` 目錄下建立 `.clasp.json`（此檔案已加進 `.gitignore`，不會被提交；可以複製專案根目錄的 `.clasp.json.example` 當起點）：
+在 GAS 編輯器的「專案設定」複製指令碼 ID，於本機 `src/` 目錄下建立 `.clasp.json`（此檔案已加進 `.gitignore`，不會被提交；可以複製同一個 `src/` 目錄下的 `.clasp.json.example` 當起點）：
 
 ```json
 {
@@ -129,9 +128,9 @@ clasp login
 GAS 編輯器右上角「部署」→「新增部署作業」→ 類型選「網頁應用程式」：
 
 - **執行身份**：我（對應 `appsscript.json` 裡的 `USER_DEPLOYING`）
-- **誰可以存取**：依你的需求決定（`appsscript.json` 目前預設 `ANYONE`，即任何有網址、且登入 Google 帳號的人都能開啟——這只決定「誰能打開這個網頁」，跟站內自己的帳號權限系統是兩層不同的機制，部署前建議重新確認這個選項是否符合你的需求）
+- **誰可以存取**：依你的需求決定（`appsscript.json` 目前預設 `ANYONE_ANONYMOUS`，即任何人不需要登入 Google 帳號、只要有網址就能開啟——這只決定「誰能打開這個網頁」，跟站內自己的帳號權限系統是兩層不同的機制，部署前建議重新確認這個選項是否符合你的需求。這個專案的定位是完全公開、不需要 Google 帳號就能使用的 BBS，所以預設選了這個最寬鬆的選項；如果你想多一層「至少要有 Google 帳號」的過濾，改成 `ANYONE` 即可，不需要改任何程式碼）
 
-部署後會拿到一組網頁應用程式網址。第一次開啟時，`ensureSchema` 會自動建立 `Users`/`Boards`/`Articles`/`Replies`/`Permission`/`LineGroupBoards`/`LineStaging`/`LineUserId` 八張工作表，並把 `Permission` 表填入預設的 `newbie`/`user`/`admin` 三個角色。`LineGroupBoards`/`LineStaging`/`LineUserId` 三張只會建立表頭，不會有預設資料——這三張是 LINE 機器人功能專用，只有在你要啟用該功能時才需要手動維護（見下方「LINE 群組對話紀錄機器人設定」）。
+部署後會拿到一組網頁應用程式網址。第一次開啟時，`ensureSchema` 會自動建立 `Users`/`Boards`/`Articles`/`Replies`/`Permission`/`LineGroupBoards`/`LineStaging`/`LineUserId`/`AuditLog` 九張工作表，並把 `Permission` 表填入預設的 `newbie`/`user`/`admin` 三個角色。`LineGroupBoards`/`LineStaging`/`LineUserId` 三張只會建立表頭，不會有預設資料——這三張是 LINE 機器人功能專用，只有在你要啟用該功能時才需要手動維護（見下方「LINE 群組對話紀錄機器人設定」）。`AuditLog` 同樣只會建立表頭，平常不需要手動維護，只在特定安全事件（登入鎖定、管理員重設密碼、管理員代管他人文章/回覆）發生時才會自動多一列，供事後查核。
 
 ### 4. 讓自己成為管理者
 
@@ -139,7 +138,7 @@ GAS 編輯器右上角「部署」→「新增部署作業」→ 類型選「網
 
 ### 5.（選用）幫使用者手動重設密碼
 
-`src/AdminTools.js` 提供一支 `resetUserPasswordManually`，沒有任何網頁進入點，只能在 Apps Script 編輯器裡手動選取這支函式、填入目標帳號與新密碼後執行。詳見該檔案開頭的註解。
+密碼重設的核心邏輯在 `src/adminResetPassword.js` 的 `resetPassword_`（有自動化測試覆蓋），實際手動觸發的入口在 `tools/adminMaintenanceTools.gs.js` 的 `resetUserPasswordManually`——這個檔案平常不安裝進 Apps Script 專案，只在需要重設密碼時才臨時貼進去、執行、用完立刻刪除，詳見該檔案開頭的使用說明。
 
 ### 從既有部署升級：圖片欄位格式遷移（圖片張數突破輪）
 
@@ -152,6 +151,17 @@ GAS 編輯器右上角「部署」→「新增部署作業」→ 類型選「網
 5. 確認沒問題後，`migrateArticleImagesToArray.gs.js` 可以從 Apps Script 專案裡刪除（`imageStorage.js` 不用刪，是正式程式碼的一部分）。舊的 `imageUrl2`/`imageUrl3` 兩欄（原本的 K、L 欄）遷移後不會被自動清空或刪除，會保留在試算表裡當備份。**這兩欄之後可以安全手動刪除**——目前所有程式碼（`schema.js`/`postArticle.js`/`editArticle.js`/`deleteArticle.js`/`boardBulk.js`/`articleDetail.js`）都只讀寫 J 欄（`imageUrls`），沒有任何地方會再讀 K、L 兩欄；建議至少保留到你確認過幾篇既有文章的圖片都正常顯示、對整個系統有信心之後，再到 Sheets 介面手動刪除這兩欄（刪除前一樣建議先手動複製一份整份試算表當備份，這是刪除任何資料前的通用建議，不是這兩欄特有的風險）。
 
 全新建立的試算表（`ensureSchema` 從零建立）不需要這個步驟，一開始就是新格式。
+
+### 從既有部署升級：daily-digest trigger 改名（安全強化輪）
+
+如果你**已經啟用過**上面「LINE 群組對話紀錄機器人設定」、正式環境裡已經裝了一個每日 00:05 執行 `dailyLineDigestCheck`（沒有底線的舊名稱）的 trigger，部署這一輪的新程式碼會讓那個舊 trigger 失效——它記的 handler 名稱字串在新程式碼裡已經不存在，之後每天 00:05 觸發時只會在執行紀錄裡留下錯誤，不會有任何人主動發現：
+
+1. 部署新程式碼**之前**，先到 Apps Script 編輯器左側「觸發條件」（鬧鐘圖示）頁面，手動刪除那個指向 `dailyLineDigestCheck` 的既有 trigger。
+2. 部署新程式碼。
+3. 把 `tools/adminMaintenanceTools.gs.js` 貼進編輯器，執行一次裡面的 `installDailyLineDigestTrigger`，建立指向新名稱 `dailyLineDigestCheck_` 的 trigger。
+4. 確認「觸發條件」頁面出現新的 trigger 之後，把 `tools/adminMaintenanceTools.gs.js` 從專案裡刪除。
+
+全新部署（還沒啟用過 LINE 機器人功能）不需要這個步驟，照上面「LINE 群組對話紀錄機器人設定」第 7 步走一次即可。
 
 ## 權限系統
 
@@ -167,13 +177,13 @@ GAS 編輯器右上角「部署」→「新增部署作業」→ 類型選「網
 
 1. **建立 LINE Messaging API Channel**（在 [LINE Developers Console](https://developers.line.biz/console/)），取得 Channel Access Token。
 2. **在 GAS 專案的 Script Properties 填入 `LINE_CHANNEL_ACCESS_TOKEN`**（編輯器左側「專案設定」→「指令碼屬性」）。
-3. **同一個地方再填一筆 `LINE_BOT_USER_ID`**：登入 [LINE Developers Console](https://developers.line.biz/console/) → 這個 Channel 的「Basic settings」頁面，找到「Bot user ID」（`U` 開頭 + 32 碼十六進位字元；**不是**同一頁看到的那個 10 碼數字 Channel ID，兩者是不同的識別碼）。這個值會用來讓 `doPost` 檢查收到的 webhook 是不是真的要給這個 bot（見下方安全性說明）；沒有填的話這道檢查會直接放行，不影響功能，只是少了這層防護。**如果填完之後訊息都進不了 `LineStaging`**，很可能是這步驟填錯了值（Console 頁面上「你自己（開發者帳號）的個人 User ID」跟「bot 自己的 User ID」格式長得一樣、很容易搞混）——`src/test.js` 裡的 `checkLineBotUserId()` 可以直接問 LINE 官方 API 要 bot 真正的 User ID，比對照 Console 畫面手動找更不容易出錯，見該函式開頭的說明。
+3. **同一個地方再填一筆 `LINE_BOT_USER_ID`**：登入 [LINE Developers Console](https://developers.line.biz/console/) → 這個 Channel 的「Basic settings」頁面，找到「Bot user ID」（`U` 開頭 + 32 碼十六進位字元；**不是**同一頁看到的那個 10 碼數字 Channel ID，兩者是不同的識別碼）。這個值會用來讓 `doPost` 檢查收到的 webhook 是不是真的要給這個 bot（見下方安全性說明）；沒有填的話這道檢查會直接放行，不影響功能，只是少了這層防護。**如果填完之後訊息都進不了 `LineStaging`**，很可能是這步驟填錯了值（Console 頁面上「你自己（開發者帳號）的個人 User ID」跟「bot 自己的 User ID」格式長得一樣、很容易搞混）——把 `tools/adminMaintenanceTools.gs.js` 貼進編輯器、執行裡面的 `checkLineBotUserId()`，可以直接問 LINE 官方 API 要 bot 真正的 User ID，比對照 Console 畫面手動找更不容易出錯，查完記得把這個檔案從專案裡刪除，見該函式開頭的說明。
 4. **把 bot 加入要記錄的 LINE 群組**，在群組裡傳一則訊息；因為這個群組還沒授權，訊息不會被記錄，但 `doPost` 會把 `groupId` 印到 Apps Script 的「執行」（Executions）紀錄裡，方便你查到要填什麼（LINE 沒有任何介面能直接查群組 ID，只能透過 webhook 事件取得）。
 5. **在試算表的 `LineGroupBoards` 分頁手動新增一列**：`groupId` 填上一步查到的值、`groupName` 自訂顯示名稱、`boardId` 填要彙整貼到的看板 ID（**該看板必須已經存在於 `Boards` 分頁**）。`lastDigestDate`/`todayDigestCount` 留空，系統自動維護。
-6. **重新部署 Web App**——這個功能用到 `UrlFetchApp`（呼叫 LINE API）與 `ScriptApp.newTrigger`（建立每日排程），是全新的權限需求，重新部署會跳出新的授權畫面。可以先在編輯器手動執行 `src/test.js` 裡的兩支函式確認授權已經生效：
+6. **確認／重新部署 Web App**——這個功能用到 `UrlFetchApp`（呼叫 LINE API）與 `ScriptApp.newTrigger`（建立每日排程）。如果你是照這份文件從零開始部署，`src/lineBotGlue.js` 從第一次推送程式碼就已經存在，第 3 步「部署為網頁應用程式」當下的授權畫面應該已經一併要求過這兩項權限，這裡不需要真的重新部署一次，除非你不確定當初有沒有順利授權成功；如果你是**從沒有 LINE 機器人功能的舊版本升級上來**，這兩項是全新的權限需求，才需要真的重新部署一次觸發新的授權畫面。不管是哪一種情境，都可以把 `tools/adminMaintenanceTools.gs.js` 貼進編輯器，手動執行裡面的兩支函式來確認這兩項權限目前是不是真的授權成功：
    - `checkUrlFetchPermission()`：驗證 `UrlFetchApp` 權限，安全、可重複執行，不會寫入任何資料。
    - `triggerScriptAppPermission()`：驗證 `ScriptApp` 權限，會建立一個測試用的 trigger 來觸發授權——**執行完記得手動到編輯器左側「觸發條件」（鬧鐘圖示）把這個測試 trigger 刪掉**（`ScriptApp.deleteTrigger()` 在協作者帳號下會報錯，這支函式故意不自動清，需要手動處理）。
-7. **在編輯器手動執行一次 `installDailyLineDigestTrigger`**（`src/lineBotGlue.js`），建立每日 00:05（Asia/Taipei）的換日檢查排程，把當天沒達到門檻的殘餘對話收尾送出。這個函式有防重複保護，不小心重複執行也不會建立出多個排程。**注意**：這支函式建立的 trigger 時間寫死在程式碼裡（`atHour(0).nearMinute(5)`），如果想要別的時間（例如 23:50），需要執行完之後另外到編輯器左側「觸發條件」畫面手動把那個已安裝的 trigger 改成想要的時間——這是 Apps Script 允許的操作，改完之後**實際運作時間**就是你手動設定的那個，會跟程式碼裡寫的預設值不一致；如果之後重新執行一次 `installDailyLineDigestTrigger`（例如重新部署、防重複保護沒生效），會照程式碼預設值裝出一個 00:05 的新 trigger，記得留意這個落差。
+7. **執行一次 `tools/adminMaintenanceTools.gs.js` 裡的 `installDailyLineDigestTrigger`**，建立每日 00:05（Asia/Taipei）的換日檢查排程，把當天沒達到門檻的殘餘對話收尾送出，實際執行的是 `src/lineBotGlue.js` 的 `dailyLineDigestCheck_`（函式名稱結尾的底線是資安考量——見該函式開頭的註解——代表它不會出現在「新增觸發條件」面板的下拉選單裡，所以這一步才需要用程式碼指定 handler 名稱來建立，不是去那個面板手動選）。這個安裝函式有防重複保護，不小心重複執行也不會建立出多個排程。**注意**：這支函式建立的 trigger 時間寫死在程式碼裡（`atHour(0).nearMinute(5)`），如果想要別的時間（例如 23:50），需要執行完之後另外到編輯器左側「觸發條件」畫面手動把那個已安裝的 trigger 改成想要的時間——這是 Apps Script 允許的操作，改完之後**實際運作時間**就是你手動設定的那個，會跟程式碼裡寫的預設值不一致；如果之後重新執行一次 `installDailyLineDigestTrigger`（例如重新部署、防重複保護沒生效），會照程式碼預設值裝出一個 00:05 的新 trigger，記得留意這個落差。確認 trigger 裝好之後，`tools/adminMaintenanceTools.gs.js` 可以從專案裡刪除。
 8. **把 LINE Developers Console 裡該 Channel 的 Webhook URL 設定成部署後的 `/exec` 網址**，並開啟「Use webhook」。
 
 完成以上步驟後，該群組的對話會依圖片數（≥99 張）或文字量（≥8000 字元）自動分段彙整成看板文章，作者顯示為固定的 `SYSTEM`（不佔用任何排行榜名額）；沒有達到門檻的殘餘內容會在每天 00:05 被收尾送出。
@@ -189,7 +199,7 @@ npm install
 npm test
 ```
 
-每個 `src/*.js` 的匯出函式都有對應的單元測試,透過手刻的 Google Apps Script 服務測試替身(`test/doubles/`)模擬 `SpreadsheetApp`、`LockService`、`CacheService`、`DriveApp`、`PropertiesService`,不需要真正的 Google 帳號或網路連線就能跑完整套測試。`Code.js`/`lineBotGlue.js`(膠水層)、`test.js`(手動維運工具)與 `Index.html`(前端)沒有自動化測試,靠 `MANUAL_VERIFICATION.md` 的清單在真實 GAS 環境手動驗收。
+每個 `src/*.js` 的匯出函式都有對應的單元測試,透過手刻的 Google Apps Script 服務測試替身(`test/doubles/`)模擬 `SpreadsheetApp`、`LockService`、`CacheService`、`DriveApp`、`PropertiesService`,不需要真正的 Google 帳號或網路連線就能跑完整套測試。`Code.js`/`lineBotGlue.js`(膠水層)與 `Index.html`(前端)沒有自動化測試,靠 `MANUAL_VERIFICATION.md` 的清單在真實 GAS 環境手動驗收;`tools/*.gs.js`(一次性/偶爾才需要的手動維運工具,平常不安裝進正式專案)同樣沒有自動化測試,是刻意的取捨,不是遺漏。
 
 `test/doubles/fakeSpreadsheet.js` 的每個分頁(sheet)物件會記錄自己被 `getValues()`/`getRawValues()` 讀取的次數(`sheet._getReadCount()`),只計「真正讀資料」的呼叫,寫入操作(`appendRow`/`setValues`/`setNumberFormat`/`setDataValidation`)不計入。這是為了讓測試能直接斷言「這次操作總共讀了幾次某張表」,用來驗證讀寫次數優化(避免同一次執行內重複讀取同一張表)確實有生效,而不只是相信程式碼有改對。
 
@@ -255,6 +265,7 @@ GAS 的 `HtmlService.createTemplateFromFile` 編譯 `.html` 樣板時,是把**�
 
 - 新增任何 `require('./其他檔案')` 之前,先確認對方那個檔案有沒有反過來 `require` 自己這個檔案——尤其是想要重用一個小工具函式時特別容易疏忽,因為表面上看起來只是單向借用一個純函式。
 - 一旦發現會形成循環,不要動既有那條已經在運作的 require 方向(改了很可能牽連到其他已經依賴它的程式碼),改成在需要重用邏輯的那一端放一份小小的本地複本——這個專案已經有數個先例(`login.js` 的 `roleAllowsLogin_` 沒有重用 `permissions.js`、`mentions.js`/`login.js` 各自對 `escapeFormulaInjection`/`pendingMentions` 解析邏輯放了本地複本),條件是複本本身要夠小、夠穩定,不容易之後兩邊各自改出分歧。
+- **這條原則本輪出現一個例外,誠實記錄下來,不要之後被誤以為是疏漏而重新「修正」回去**:`/mycr` 全新視角複掃輪修 `AuditLog` 的公式注入時,需要重用 `escapeFormulaInjection`,但當時沒有意識到 `mentions.js` 早就因為同一個理由放過一份本地複本(見上一條)——選擇把 `escapeFormulaInjection`/`FORMULA_TRIGGER_CHARS` 抽成一個完全沒有依賴的獨立檔案 `formulaInjection.js`,讓 `postArticle.js`/`auditLog.js`/`lineStaging.js`/`lineUserId.js` 四個消費端都直接依賴這個葉節點模組(`postArticle.js` 原本的匯出改成從這裡取用、原樣 re-export,不影響既有呼叫端)。這跟上面的既有慣例不一致(那個慣例明講「不要動既有 require 方向,直接放本地複本」,這次反而重構了 `postArticle.js` 內部),之所以事後判斷這個做法可以接受、不回頭改成本地複本,是因為:(1) 這是四個消費端共用同一份邏輯,比起在 `auditLog.js` 再放第五份複本,合併成一份單一事實來源反而更不容易之後分歧;(2) `formulaInjection.js` 本身零依賴,不可能再造成任何循環,長期風險比「這個核心工具函式的複本散落在五個檔案裡」更低。**`mentions.js` 的本地複本這次刻意沒有一併改成依賴 `formulaInjection.js`**——那份複本本身沒有壞掉、也通過既有測試,這次修的是 `AuditLog` 的公式注入這一件事,不是把整個專案的 `escapeFormulaInjection` 使用方式統一重構,兩者混在一起做風險不成比例,值不值得統一是留給之後某一輪要不要順手做的選擇題,不是義務。
 - 改完之後,兩個方向都要各自實際跑一次測試確認(例如「測試檔案先 require A」與「測試檔案先 require B」兩種情境都要驗證過),不能只憑其中一次測試執行結果通過就當作沒問題——這正是這個問題最容易被漏掉的地方。
 - **交接文件(`/handoff`)務必把這一整段原則帶進去**,理由跟上面幾條一樣。
 
@@ -270,6 +281,29 @@ GAS 的 `HtmlService.createTemplateFromFile` 編譯 `.html` 樣板時,是把**�
 - 負責更新快取的共用函式(`patchArticleDetailOnReplyCreate`/`patchArticleDetailOnReplyDelete`/`patchArticleDetailOnEdit`/`patchArticleListOnCreate`/`patchArticleListOnEdit`/`patchArticleListOnDelete`/`patchArticleListReplyCount`)本身也要延續同一個原則:`boardId` 一律當參數傳入,不要在函式內部讀 `currentBoardId` 全域變數;負責更新快取的函式不要直接動 `lastArticleDetail`/直接呼叫 `renderArticleListFromCache` 之類會動到畫面的東西——是否要同步到畫面,交給呼叫端自己判斷。
 - **交接文件(`/handoff`)務必把這一整段原則帶進去**,理由跟上面幾條一樣。
 
+### 工程原則:往陣列裡插入「新建立的項目」前,要先確認它不是已經存在(bug-fix 輪 3 使用者實測回報,之後每一輪都要延續)
+
+上一條原則解決的是「callback 讀到過期的全域變數」;這一條是**同一個非同步空檔會造成的另一種、更隱蔽的問題**——就算 callback 內部已經正確使用呼叫當下鎖定的目標(`targetBoardId` 等區域變數,不是全域變數),只要有**另一個完全獨立的非同步操作**(例如使用者手動跳頁、或任何其他會重新整理同一份快取的動作)剛好在這段等待空檔搶先完成、把本地快取換成「已經包含這次新建立項目」的最新資料,原本這個操作自己的 callback 稍後才執行到時,如果邏輯是「無條件把新項目插入陣列」(`push`/`unshift`),就會把同一筆資料重複插入一次——這不是「套用到錯誤的目標」,是「同一份正確的資料被插入了兩次」,重新整理頁面會把本地快取整個重新讀回來,才會發現試算表裡其實只有一筆。
+
+實際案例:`patchArticleListOnCreate`(發文成功後把新文章塞進列表最前面)在跳頁後的頁次發文,送出後如果使用者搶在伺服器回應前手動跳頁回最新頁,跳頁請求先完成、把快取換成已經包含新文章的資料,發文自己的 callback 才姍姍來遲執行到,`unshift` 就會把同一篇文章插入兩次。`patchArticleDetailOnReplyCreate`(送出回覆)是同一種寫法的另一個實例,一併修掉。
+
+**這條原則之後每一輪異動都要延續**:
+
+- 任何 callback 裡「把這次操作新建立的項目插入陣列」的邏輯(不管是 `push` 還是 `unshift`),插入之前一律先用該項目的唯一識別碼(`articleId`/`replyId` 這類)確認陣列裡還沒有這筆資料——已經存在就代表有別的路徑先一步補上了,只需要同步版本號,不要再插入一次。
+- 這條原則只適用於「無條件插入新項目」這一類操作;「依識別碼查找後修改/刪除」(`patchArticleListOnEdit`/`patchArticleListOnDelete`/`patchArticleDetailOnReplyDelete`)本來就是先找到才動作,找不到就直接回傳失敗,天生不會有重複插入的問題,不需要額外處理。
+- **交接文件(`/handoff`)務必把這一整段原則帶進去**,理由跟上面那條一樣。
+
+### 工程原則:`schema.js` 的結構定義有版本閘門,異動時必須跟著手動觸發一次(mycr 第 15 輪票 14,之後每一輪都要延續)
+
+從第 15 輪起,`doGet` 不再每次匿名載入頁面都重跑一次完整的 `ensureSchema`(逐表檢查/修復表頭、格式、預設資料)——這個成本原本是每次頁面載入約 20 次寫入型 + 12 次讀取型 `SpreadsheetApp` 呼叫,對每一個訪客都是浪費。現在改成版本閘門:`src/schema.js` 的 `SCHEMA_VERSION` 常數只有被刻意調高、且比 Script Properties 裡記錄的「已套用版本」新的時候,下一次 `doGet` 才會真的執行完整檢查;其餘情況只讀一個屬性值,完全不碰 `SpreadsheetApp`。`ensureSchema` 本身的函式簽名/行為完全沒變,`tools/` 底下的維運工具與全部既有測試都還是直接呼叫它,拿到不受閘門影響的完整檢查。
+
+**這條原則之後每一輪異動都要延續,不是這輪做完就結束**:
+
+- 任何一輪修改到 `SHEET_HEADERS`/`TIMESTAMP_COLUMNS`/`DEFAULT_PERMISSION_ROWS`(新增/刪除/改名工作表、欄位、預設權限列)時,一定要把 `src/schema.js` 的 `SCHEMA_VERSION` 常數加 1——`test/schema.test.js` 有一個守門測試,拿這三個結構定義算一個指紋字串,跟寫死的「已知良好」字串比對,結構定義變了但版本號沒有跟著調高會讓這個測試失敗,提醒自己別忘記做這一步。
+- **執行者(不論是 AI 助理或開發者本人)除了調高版本號、更新守門測試的指紋字串之外,必須在對話/工作紀錄中明確提示需要前往 Apps Script 編輯器手動執行一次 `tools/adminMaintenanceTools.gs.js` 的 `forceEnsureSchema`,不能只依賴版本閘門在下一位訪客載入頁面時自動觸發**——自動觸發的時機無法控制,可能是任何一位匿名訪客的請求,不適合作為結構性異動生效的唯一保證。這一步沒有辦法用自動化測試強制,守門測試只能提醒「忘記調版本號」,提醒不了「忘記手動觸發」這件事本身,要靠人記得。
+- 首次部署有調高 `SCHEMA_VERSION` 的版本時,建議先手動執行一次 `forceEnsureSchema`,不要單純依賴閘門在正式流量下自動觸發第一次。
+- **交接文件(`/handoff`)務必把這一整段原則帶進去**,理由跟上面幾條一樣。
+
 ## 已知限制
 
 - 資料庫是 Google 試算表，讀取邏輯本質上還是整張表撈出來後在應用程式端排序篩選，沒有伺服器端的分段查詢——**第五輪已經針對「讀寫次數」這個實際上影響延遲最大的因素做了系統性優化**（角色權限查驗改用 session 快照快取、看板文章改成整批預載 + 版本戳比對，見上方「工程原則」一節與 `.scratch/gas-bbs-perf-optimization/`），但「單次讀取仍是整張表掃描」這個底層架構本身沒有變；文章量非常大時（例如匯入多年份的舊資料，或單一看板文章數遠超過批次上限）仍可能需要重新評估效能。
@@ -281,8 +315,13 @@ GAS 的 `HtmlService.createTemplateFromFile` 編譯 `.html` 樣板時,是把**�
 - 發文/儲存編輯的連點保護（`pendingRequests` 旗標，見上方工程原則）是單一分頁的記憶體狀態，不會跨分頁同步——如果同時開兩個分頁對同一篇文章分別按發布/儲存，兩邊互不知道對方存在，理論上仍可能各自成功送出（重複文章或版本互相覆蓋）。這是一般網頁在沒有伺服器端冪等性 token 機制時的通用限制，不是這個專案特有的缺口，目前沒有針對這個情境額外處理。
 - 圖片上傳到 Google Drive 後一律設成「知道連結的任何人都能看」（`DriveApp.Access.ANYONE_WITH_LINK`），不會隨文章所在看板的 `AllowRoles` 限制收斂——如果圖片連結字串意外流出看板權限範圍之外，拿到連結的人可以繞過看板權限直接看到圖片本身（安全性審查 L-2，見對話紀錄）。這是目前架構下的已知取捨：要做到圖片權限真正跟著看板走，需要另外架一個會檢查權限才轉發圖片的中介層，複雜度與目前評估的實際風險不成比例，暫不處理，這裡記錄下來避免之後誤以為圖片權限有跟著看板收斂。
 - 登入失敗鎖定機制（`LOGIN_FAIL_THRESHOLD`/`LOGIN_FAIL_TTL_SECONDS`，見 `src/login.js`）是以 `userId` 為鍵，不是以來源 IP 為鍵（GAS 環境本來就拿不到可靠的來源 IP）——任何人只要知道一個合法使用者的 `userId`，故意連續打錯 5 次密碼，理論上可以把那個使用者鎖在外面 15 分鐘（安全性審查 L-3，見對話紀錄）。這是「以帳號為鍵的登入鎖定機制」這一類設計普遍的通用取捨（相對於完全不鎖定、放任暴力破解），不是這個專案特有的疏漏，目前評估不需要改成鎖定時間隨連續失敗次數遞增等加強版本。
+- 註冊端點的節流機制（`REGISTER_LIMIT_PER_5MIN`/`REGISTER_LIMIT_PER_HOUR`，見 `src/register.js`）是**全站共用**的兩層計數器（預設每 5 分鐘 1 次、每小時 10 次），不是以來源 IP 或帳號為鍵——原因跟上面 L-3 一樣，GAS 完全拿不到來源 IP，沒有辦法區分惡意/正常來源。這代表這個機制本身**沒辦法真正阻止濫用**，只能提高濫用的成本：一個惡意來源理論上可以在視窗一開始就把當下的額度耗盡，讓同一個視窗內其他所有正常使用者也一起註冊不了，等於是用犧牲一點可用性換取「隨意亂灌帳號」的成本提高，是刻意接受的取捨，不是疏漏。這兩個數字刻意設計成常數、預設值刻意保守，之後依實際觀察到的使用/濫用狀況調整；如果之後真的觀察到需要更精準（區分惡意/正常來源）的防護，正確方向是在 GAS 前面架一層看得到真實 IP 的反向代理（例如自訂網域搭配 Cloudflare），不是在 GAS 內部想辦法，這是本專案目前刻意不採用的架構決定，見對話紀錄。
 - `login()`（`src/login.js`）裡 `record && verifyPassword(...)` 是短路求值：`userId` 不存在時完全不會呼叫 `verifyPassword`（不做雜湊運算），`userId` 存在但密碼錯時才會做雜湊+比對，兩條路徑的回應時間理論上有可測量的差異，可能被用來列舉哪些 `userId` 存在（複審 Finding 3，見對話紀錄）；`verifyPassword` 內部用 `===` 比對雜湊字串，也不是嚴格意義上的常數時間比對。評估後判斷風險偏理論性質——GAS 網頁應用本身的網路/執行時間雜訊（冷啟動、配額節流）遠大於這種毫秒級雜湊時間差，要撈出穩定訊號得對同一個候選重複取樣很多次；且雪崩效應下，即使真的量得出時間差，也不會讓攻擊者更接近猜出實際密碼，只會洩漏「這個 `userId` 存不存在」這一位元資訊。目前評估不需要為此讓「使用者不存在」的路徑也強制跑一次雜湊運算。
 - Session 快照快取（`getMyStatus`/`getBoardBulkFromToken`/`getArticleDetailFromToken`，見上方「工程原則：試算表讀寫次數精簡」）有一個安全性相關的副作用：管理者剛把某個角色的權限調整掉、或把某個看板的 `AllowRoles` 改掉，如果使用者瀏覽器裡剛好對某篇文章有命中的快取版本，要等版本被其他異動打掉、或使用者重新整理頁面（重新查一次 `getMyStatus`），新的權限限制才會真的生效——換句話說，權限收回不是即時的（複審 N-1，見對話紀錄）。這是效能與即時性之間經過深思熟慮的取捨，不是遺漏（管理者調整權限的頻率極低，可以接受這個延遲），完整推導見 `Code.js` 的 `getArticleDetailFromToken` 函式註解。
+- 排行榜（`leaderboard.js` 的 `getLeaderboardForRole`）只檢查全站的 `leaderboard` 權限旗標，回傳的登入次數/發文數/回覆數排名是對整個 `Users` 表統計，不會隨任何看板的 `AllowRoles` 收斂——一個被排除在某個受限看板之外的角色，仍然可以透過排行榜看到「某些 userId 存在、且活躍度很高」，這些數字很可能有一部分來自他完全看不到內容的看板（安全性複審，見對話紀錄）。風險評估偏低：只洩漏 userId 存在＋概略活躍度這類中繼資料，不洩漏看板內容本身，跟上面 L-2、Finding 3 是同一個量級。要讓排行榜統計真正跟著看板權限收斂，需要把使用者活躍度資料拆成「每個看板各自統計」而不是目前的全站單一總數，是資料模型層級的變更，複雜度與目前評估的實際風險不成比例，暫不處理，這裡記錄下來避免之後誤以為是疏漏。
+- 密碼儲存是單輪 `SHA-256(password+salt)`（`src/register.js` 的 `hashPassword`），hash 與 salt 都存在 `Users` 表裡，沒有 pepper、沒有多輪迭代——任何能讀取試算表原始資料的人（編輯者、被誤分享、匯出），可以離線對弱密碼做字典攻擊（mycr 第 15 輪掃描報告 F-06）。第 15 輪已經把這個發現拆成兩半處理：**最短密碼長度提高到 8 碼、加入約 20 個常見弱密碼黑名單**（`src/register.js` 的 `validatePassword`，零成本、只影響新註冊/未來改密碼）已經實作；**pepper（存在 Script Properties，不在試算表裡）+ 多輪雜湊迭代 + 舊帳號登入時自動升級**這一半刻意延後，因為 GAS 上每次 `Utilities.computeDigest` 呼叫的實際延遲無法在這裡量測，迭代次數一多可能讓登入變慢，需要先在真實環境測過延遲影響才能決定要迭代幾輪，留給之後某一輪要動手時再展開設計。
+- 圖片上傳（`Code.js` 的 `uploadImageBatch`/`uploadArticleImages_`）沒有任何跨 session 的配額限制，唯一限制是每個 token 各自的待用清單上限（99 張、單檔 5MB）——只要重新登入就會拿到新 token、新的空清單，帳號本身的每日/每週上傳總量沒有上限（mycr 第 15 輪掃描報告 F-13）。清單過期、發文失敗、或編輯時最終沒有用到的已上傳圖片，也不會主動從 Google Drive 刪除，會逐漸累積孤兒檔案。已評估過用 CacheService 做「以 userId 為鍵、6 小時視窗」的配額（CacheService 的 TTL 上限是 6 小時，做不出真正的「每日」配額），以及定期掃描 `Articles.imageUrls` 清理沒有被引用的 Drive 檔案，兩者都決定**暫不實作**：前者的效益相對於這個專案目前的使用規模不成比例；後者要新增排程，且誤刪仍被引用中圖片的風險，評估後認為大於它能帶來的儲存空間效益。這裡記錄下來，之後使用規模變化、有實際濫用跡象時再重新評估。
+- LINE 訊息 ID（`LineStaging.webhookEventId`，用來判斷訊息是否已經處理過/是否已收回）目前**沒有**套用跟其他自由文字欄位一樣的防型別轉換前綴（見上方「試算表讀寫次數精簡」旁的 `formulaInjection.js` 相關修法），寫入時能正確保持字串型別、去重跟收回判斷能正常運作，靠的是 Google Sheets 本身的數字精度上限（約 15~17 位有效數字）——LINE 的訊息 ID 是 18 位數字字串，超過這個精度上限，Sheets 的自動型別判別會放棄把它轉成 Number、原樣保留成文字（已用真實試算表實測驗證，見 mycr 第 15 輪對話紀錄）。**這是 Sheets 內部實作細節帶來的巧合，不是這個專案設計保證的行為**——它在今天成立，是因為 LINE 官方目前發出的訊息 ID 格式穩定維持在這個長度以上；如果 LINE 之後改變訊息 ID 的格式規則、變成一個位數不足以超過這個精度上限的數字字串，這裡會重新出現跟其他欄位當初一樣的型別轉換問題。這裡刻意記錄下來，不是因為打算置之不理，是因為目前沒有已知的觸發方式能验證/強制這個假設失效，貿然對這個特定欄位加前綴反而會在不需要的地方引入「已存在資料格式跟新資料格式不一致」的遷移問題（見上方 F-15 相關修法對「JSON 陣列儲存格」跟「獨立佔一格」兩種情況的區分）。之後如果 LINE 官方文件對訊息 ID 格式有正式的長度保證，或觀察到任何跟預期不符的行為，應該重新評估是否要主動加上前綴。
 
 ## License
 

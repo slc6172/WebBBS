@@ -8,7 +8,7 @@
 var _permissionsModule = (typeof require !== 'undefined') ? require('./permissions') : null;
 
 function getRolePermissionsFor_(spreadsheet, role) {
-  return (_permissionsModule ? _permissionsModule.getRolePermissions : getRolePermissions)(spreadsheet, role);
+  return (_permissionsModule ? _permissionsModule.getRolePermissions_ : getRolePermissions_)(spreadsheet, role);
 }
 
 /**
@@ -72,7 +72,7 @@ function topThreeWithTies_(users, field) {
  * @param {string|null} role
  * @returns {{loginCount: Array, articleCount: Array, replyCount: Array}}
  */
-function getLeaderboardForRole(spreadsheet, role) {
+function getLeaderboardForRole_(spreadsheet, role) {
   if (!getRolePermissionsFor_(spreadsheet, role).leaderboard) {
     return { loginCount: [], articleCount: [], replyCount: [] };
   }
@@ -80,5 +80,5 @@ function getLeaderboardForRole(spreadsheet, role) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { getLeaderboard: getLeaderboard, getLeaderboardForRole: getLeaderboardForRole };
+  module.exports = { getLeaderboard: getLeaderboard, getLeaderboardForRole_: getLeaderboardForRole_ };
 }

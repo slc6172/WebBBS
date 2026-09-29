@@ -1,4 +1,4 @@
-const { MAX_PENDING_MENTIONS, extractMentionCandidates_, getPendingMentions_, appendPendingMention_, buildMentionEntry_, recordMentionsForContent_ } = require('../src/mentions');
+const { MAX_PENDING_MENTIONS, MAX_MENTIONS_PER_POST, extractMentionCandidates_, validateMentionCount_, getPendingMentions_, appendPendingMention_, buildMentionEntry_, recordMentionsForContent_ } = require('../src/mentions');
 const { ensureSchema } = require('../src/schema');
 const { createFakeSpreadsheet } = require('./doubles/fakeSpreadsheet');
 const { createFakeLock } = require('./doubles/fakeLock');
@@ -301,6 +301,111 @@ test('recordMentionsForContent_ integrated with the cap: a user already at the c
   expect(pending[pending.length - 1]).toMatchObject({ articleId: 'a1', mentionedBy: 'alice01' });
 });
 
+test('recordMentionsForContent_ does not throw and still processes remaining mentions when a user\'s row is deleted between the existence check and the lock-protected re-read (rare race condition, found in /mycr deep rescan)', () => {
+  const ss = createFakeSpreadsheet();
+  ensureSchema(ss);
+  seedBoard(ss);
+  seedUserRow(ss, { userId: 'bob0002', role: 'user' });
+  seedUserRow(ss, { userId: 'carol003', role: 'user' });
+  const lock = createFakeLock();
+
+  const usersSheet = ss.getSheetByName('Users');
+  const originalGetLastRow = usersSheet.getLastRow.bind(usersSheet);
+  let callCount = 0;
+  usersSheet.getLastRow = function () {
+    callCount++;
+    // 第 2 次呼叫是 bob0002 鎖內重新讀取（第 1 次是外層存在性檢查）——回傳 1
+    // 讓 getUserRecord_ 的 `lastRow < 2` 保護觸發、回傳 null，模擬管理者剛好
+    // 在這極窄的時間窗內把這一列刪除。不用真的呼叫 deleteRow 搬動底層資料
+    // （之後還要處理 range 邊界重算），偽造這一次的回傳值就足以重現
+    // getUserRecord_ 回傳 null 這個單一條件。
+    if (callCount === 2) return 1;
+    return originalGetLastRow();
+  };
+
+  expect(() => {
+    recordMentionsForContent_(ss, lock, baseParams({ text: '@bob0002 跟 @carol003 都要來' }));
+  }).not.toThrow();
+
+  // bob0002：外層存在性檢查通過，但鎖內重讀時「已經不存在」，靜默略過、沒有寫入任何通知
+  expect(getPendingMentionsFor(ss, 'bob0002')).toEqual([]);
+  // carol003：完全不受這個競態影響，跟平常一樣正常收到通知
+  expect(getPendingMentionsFor(ss, 'carol003')).toHaveLength(1);
+});
+
+// mycr 第 15 輪票 04（見 F-05）：跟上面那個測試是同一類「鎖內單一候選人
+// 出狀況，不該波及其他候選人或整個請求」，差別是這次連鎖本身都拿不到
+// （waitLock 逾時），不是拿到鎖之後才發現資料被刪。文章/回覆本身已經
+// 寫入試算表完成（呼叫端在呼叫這支函式之前已經釋放自己的寫入鎖），
+// 這裡如果讓例外往上傳，使用者會看到「發文失敗」，但文章其實已經在
+// 試算表裡，重試就會重複發文——比資料被刪的競態嚴重，因為後者機率
+// 更低、影響範圍更小（只有一位使用者收不到通知），前者只要鎖競爭
+// 剛好發生就會踩到。
+test('recordMentionsForContent_ does not throw when lock.waitLock times out for one candidate, and still processes the remaining candidates', () => {
+  const ss = createFakeSpreadsheet();
+  ensureSchema(ss);
+  seedBoard(ss);
+  seedUserRow(ss, { userId: 'bob0002', role: 'user' });
+  seedUserRow(ss, { userId: 'carol003', role: 'user' });
+  const lock = createFakeLock();
+
+  let waitLockCallCount = 0;
+  lock.waitLock = function () {
+    waitLockCallCount++;
+    if (waitLockCallCount === 1) {
+      throw new Error('Lock timeout: Could not obtain lock');
+    }
+  };
+
+  expect(() => {
+    recordMentionsForContent_(ss, lock, baseParams({ text: '@bob0002 跟 @carol003 都要來' }));
+  }).not.toThrow();
+
+  // bob0002 是第一個處理的候選人，取鎖逾時，靜默略過、沒有收到通知
+  expect(getPendingMentionsFor(ss, 'bob0002')).toEqual([]);
+  // carol003 是第二個候選人，不受 bob0002 那次逾時影響，正常收到通知
+  expect(getPendingMentionsFor(ss, 'carol003')).toHaveLength(1);
+});
+
+test('recordMentionsForContent_ releases the lock even when the write inside it throws, so a later candidate is not blocked by an already-held lock', () => {
+  const ss = createFakeSpreadsheet();
+  ensureSchema(ss);
+  seedBoard(ss);
+  seedUserRow(ss, { userId: 'bob0002', role: 'user' });
+  seedUserRow(ss, { userId: 'carol003', role: 'user' });
+  const lock = createFakeLock();
+  let releaseLockCallCount = 0;
+  const originalReleaseLock = lock.releaseLock.bind(lock);
+  lock.releaseLock = function () { releaseLockCallCount++; return originalReleaseLock(); };
+
+  const usersSheet = ss.getSheetByName('Users');
+  const originalGetRange = usersSheet.getRange.bind(usersSheet);
+  let pendingMentionWriteCount = 0; // 跨越所有候選人的共用計數器，不是每次 getRange 呼叫各自歸零
+  usersSheet.getRange = function (row, col, numRows, numCols) {
+    const range = originalGetRange(row, col, numRows, numCols);
+    if (col === 11 && numCols === 1) {
+      // 這是寫回 pendingMentions 那一格；第一次呼叫（bob0002）刻意讓它拋出，
+      // 模擬鎖內的寫入本身失敗（不只是取鎖逾時）。
+      const originalSetValues = range.setValues.bind(range);
+      range.setValues = function (values) {
+        pendingMentionWriteCount++;
+        if (pendingMentionWriteCount === 1) {
+          throw new Error('simulated write failure');
+        }
+        return originalSetValues(values);
+      };
+    }
+    return range;
+  };
+
+  expect(() => {
+    recordMentionsForContent_(ss, lock, baseParams({ text: '@bob0002 跟 @carol003 都要來' }));
+  }).not.toThrow();
+
+  expect(releaseLockCallCount).toBe(2); // 兩個候選人都各自進出鎖一次，即使第一次寫入失敗
+  expect(getPendingMentionsFor(ss, 'carol003')).toHaveLength(1);
+});
+
 test('buildMentionEntry_ shapes the fields the login-time notification list needs', () => {
   const entry = buildMentionEntry_({
     mentionedBy: 'alice01',
@@ -319,7 +424,13 @@ test('buildMentionEntry_ shapes the fields the login-time notification list need
   });
 });
 
-test('buildMentionEntry_ applies the same formula-injection escaping to articleTitle as postArticle.js applies to title/content/imageUrls — defense in depth for this free-text field embedded in the JSON cell', () => {
+// mycr 第 15 輪票 05：原本這裡斷言 articleTitle 會被跳脫（「防禦縱
+// 深」），但那從來沒有真的防到 Sheets 層級的風險——articleTitle 是巢狀
+// 在 JSON.stringify 之後整包寫進單一儲存格的欄位，不是獨立佔一格，
+// Sheets 的公式/型別誤判只發生在整格層級，這一整格永遠是 `[` 開頭的
+// JSON 陣列字串，不可能被誤判。改成斷言「原樣保留」才是正確反映實際
+// 需要防護的範圍（見 buildMentionEntry_ 上方的完整說明），不是刪掉了事。
+test('buildMentionEntry_ leaves articleTitle unmodified even if it looks like a formula — this field lives inside a JSON blob cell, not its own cell, so per-field escaping never protected anything at the Sheets level', () => {
   const entry = buildMentionEntry_({
     mentionedBy: 'alice01',
     boardId: 'gossip',
@@ -328,5 +439,39 @@ test('buildMentionEntry_ applies the same formula-injection escaping to articleT
     timestamp: '2026/08/29 10:00:00'
   });
 
-  expect(entry.articleTitle).toBe("'=cmd|/c calc");
+  expect(entry.articleTitle).toBe('=cmd|/c calc');
+});
+
+// API4（換角度複查輪，對照 OWASP API Security Top 10 2023——Unrestricted
+// Resource Consumption）：見 mentions.js 裡 MAX_MENTIONS_PER_POST 開頭的
+// 完整理由。
+
+test('validateMentionCount_ accepts content at exactly the limit', () => {
+  const names = [];
+  for (let i = 0; i < MAX_MENTIONS_PER_POST; i++) {
+    names.push('@user' + String(i).padStart(3, '0'));
+  }
+  const result = validateMentionCount_(names.join(' '));
+  expect(result).toEqual({ valid: true });
+});
+
+test('validateMentionCount_ rejects content with one more distinct mention than the limit', () => {
+  const names = [];
+  for (let i = 0; i < MAX_MENTIONS_PER_POST + 1; i++) {
+    names.push('@user' + String(i).padStart(3, '0'));
+  }
+  const result = validateMentionCount_(names.join(' '));
+  expect(result.valid).toBe(false);
+  expect(result.error).toContain(String(MAX_MENTIONS_PER_POST));
+});
+
+test('validateMentionCount_ counts distinct candidates, not raw occurrences — repeating the same @mention many times does not trip the limit', () => {
+  const repeated = new Array(MAX_MENTIONS_PER_POST * 5).fill('@alice01').join(' ');
+  const result = validateMentionCount_(repeated);
+  expect(result).toEqual({ valid: true });
+});
+
+test('validateMentionCount_ accepts empty/undefined content without throwing', () => {
+  expect(validateMentionCount_('')).toEqual({ valid: true });
+  expect(validateMentionCount_(undefined)).toEqual({ valid: true });
 });

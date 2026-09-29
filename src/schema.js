@@ -1,13 +1,23 @@
 // The BBS + LINE digest sheets and their header rows, per spec.
 var SHEET_HEADERS = {
-  Users: ['userId', 'passwordHash', 'salt', 'role', 'createdAt', 'loginCount', 'lastLoginAt', 'articleCount', 'replyCount', 'lastSeenBoards', 'pendingMentions'],
+  // `/mycr` 深層複掃 Finding 1：credentialVersion（第 12 欄）—— 密碼重設時
+  // 換成一個新的不透明值（Utilities.getUuid()），登入時把當下的值一併存進
+  // session 的平行 cache key，getSessionRole_ 每次都拿即時讀到的這欄跟
+  // session 建立當下存的值比對，不一致就視為 session 失效。見
+  // src/login.js、src/permissions.js、src/adminResetPassword.js 的對應說明。
+  Users: ['userId', 'passwordHash', 'salt', 'role', 'createdAt', 'loginCount', 'lastLoginAt', 'articleCount', 'replyCount', 'lastSeenBoards', 'pendingMentions', 'credentialVersion'],
   Boards: ['boardId', 'boardName', 'description', 'sortOrder', 'latestArticleAt', 'latestReplyAt', 'AllowRoles'],
   Articles: ['articleId', 'boardId', 'title', 'author', 'content', 'createdAt', 'editedAt', 'editedBy', 'replyCount', 'imageUrls'],
   Replies: ['replyId', 'articleId', 'author', 'content', 'createdAt'],
   Permission: ['role', 'articleRead', 'articlePost', 'articleManageOwn', 'replyRead', 'replyPost', 'replyDeleteOwn', 'leaderboard', 'login'],
   LineGroupBoards: ['groupId', 'groupName', 'boardId', 'lastDigestDate', 'todayDigestCount'],
   LineStaging: ['groupId', 'messageTime', 'displayName', 'messageType', 'content', 'webhookEventId', 'recalled'],
-  LineUserId: ['userId', 'displayId']
+  LineUserId: ['userId', 'displayId'],
+  // A09（安全性複查換角度輪）：只記錄稀少的高價值事件（登入鎖定觸發、
+  // 管理員重設密碼、管理員代管他人文章/回覆），不是每個請求都寫一筆的
+  // 完整存取 log —— 見 gas-bbs-owasp-checklist-and-fresh-eyes-findings-spec.md
+  // 的 Finding A09。
+  AuditLog: ['timestamp', 'actor', 'action', 'target', 'detail']
 };
 
 // 1-indexed column numbers that hold timestamp strings (e.g.
@@ -24,7 +34,8 @@ var TIMESTAMP_COLUMNS = {
   Articles: [6, 7],    // createdAt, editedAt
   Replies: [5],        // createdAt
   LineGroupBoards: [4], // lastDigestDate
-  LineStaging: [2]      // messageTime
+  LineStaging: [2],     // messageTime
+  AuditLog: [1]         // timestamp
 };
 
 // Default Permission rows written the first time the Permission sheet is
@@ -38,6 +49,27 @@ var DEFAULT_PERMISSION_ROWS = [
   ['user', true, true, true, true, true, true, true, true],
   ['admin', true, true, true, true, true, true, true, true]
 ];
+
+// mycr 第 15 輪票 14（見 F-07）：每次匿名 doGet 都完整跑一次 ensureSchema
+// （逐表檢查/修復表頭、格式、預設資料），穩態下量測約 20 次寫入型 + 12
+// 次讀取型 SpreadsheetApp 呼叫，對每一個訪客都是浪費。改成版本閘門：
+// 只有程式碼裡的 SCHEMA_VERSION 被刻意調高、且比 Script Properties 裡
+// 記錄的「已套用版本」新的時候，doGet 才會真的執行完整檢查；否則只讀
+// 一個屬性值，完全不碰 SpreadsheetApp。
+//
+// 重要規則（寫在這裡，也寫進 README，之後每一輪修改都要遵守，不是這輪
+// 做完就結束）：任何一輪修改到 SHEET_HEADERS/TIMESTAMP_COLUMNS/
+// DEFAULT_PERMISSION_ROWS 這幾個結構定義時，除了把 SCHEMA_VERSION 加 1，
+// 執行者（不論是 AI 助理或開發者本人）還必須在對話/工作紀錄中明確提示
+// 需要前往 Apps Script 編輯器手動執行一次 tools/adminMaintenanceTools.gs.js
+// 的 forceEnsureSchema，不能只依賴這個版本閘門在下一位訪客載入頁面時
+// 自動觸發——自動觸發的時機無法控制，可能是任何一位匿名訪客的請求，
+// 不適合作為結構性異動生效的唯一保證。下面的 schema.test.js 有一個
+// 守門測試，結構定義變了但版本號沒有跟著調高會讓測試失敗，提醒自己
+// 別忘記做這一步，但測試不會提醒「要手動執行 forceEnsureSchema」這件
+// 事本身，那一步沒有辦法用自動化測試強制，要靠人記得。
+var SCHEMA_VERSION = 1;
+var SCHEMA_VERSION_PROPERTY_KEY = 'appliedSchemaVersion';
 
 /**
  * Ensures all five BBS sheets exist on the given spreadsheet with the
@@ -143,6 +175,35 @@ function ensureSchema(spreadsheet, buildRoleValidationRule) {
   }
 }
 
+/**
+ * mycr 第 15 輪票 14（見 F-07）：doGet 用的版本閘門，取代直接呼叫
+ * ensureSchema。ensureSchema 本身完全不變（工具、測試都還是直接呼叫
+ * 它，拿到完整、不受閘門影響的檢查）。
+ * @param {Spreadsheet} spreadsheet
+ * @param {{get: function(string): (string|null), set: function(string, string): void}} properties
+ *   注入的 properties 介面，跟 imageStorage.js 用的是同一種簡化過的
+ *   get/set 形狀（GAS 環境下由 Code.js 的 createPropertiesInterface_()
+ *   包出來，不是 PropertiesService.getScriptProperties() 原生的
+ *   getProperty/setProperty）。
+ * @param {function(string[]): *} [buildRoleValidationRule]
+ */
+function ensureSchemaIfNeeded_(spreadsheet, properties, buildRoleValidationRule) {
+  var applied = properties.get(SCHEMA_VERSION_PROPERTY_KEY);
+  if (applied !== null && parseInt(applied, 10) >= SCHEMA_VERSION) {
+    return; // 已經是最新版本，不用碰 SpreadsheetApp
+  }
+  ensureSchema(spreadsheet, buildRoleValidationRule);
+  properties.set(SCHEMA_VERSION_PROPERTY_KEY, String(SCHEMA_VERSION));
+}
+
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { ensureSchema: ensureSchema, SHEET_HEADERS: SHEET_HEADERS };
+  module.exports = {
+    ensureSchema: ensureSchema,
+    ensureSchemaIfNeeded_: ensureSchemaIfNeeded_,
+    SHEET_HEADERS: SHEET_HEADERS,
+    TIMESTAMP_COLUMNS: TIMESTAMP_COLUMNS,
+    DEFAULT_PERMISSION_ROWS: DEFAULT_PERMISSION_ROWS,
+    SCHEMA_VERSION: SCHEMA_VERSION,
+    SCHEMA_VERSION_PROPERTY_KEY: SCHEMA_VERSION_PROPERTY_KEY
+  };
 }

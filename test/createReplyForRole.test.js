@@ -1,4 +1,4 @@
-const { createReplyForRole } = require('../src/postReply');
+const { createReplyForRole_: createReplyForRole } = require('../src/postReply');
 const { ensureSchema } = require('../src/schema');
 const { createFakeSpreadsheet } = require('./doubles/fakeSpreadsheet');
 const { createFakeLock } = require('./doubles/fakeLock');
@@ -150,4 +150,22 @@ test('createReplyForRole still reads the Articles sheet at most once per call ev
   createReplyForRole(ss, lock, 'user', makeInput({ content: '@carol003 你也來看看' }));
 
   expect(ss.getSheetByName('Articles')._getReadCount()).toBeLessThanOrEqual(1);
+});
+
+test('API4: createReplyForRole rejects content with more than 20 distinct @mentions, and the reply is never written', () => {
+  const ss = createFakeSpreadsheet();
+  ensureSchema(ss);
+  seedBoard(ss, ['gossip', '八卦板', '閒聊', 1, '', '', 'ALL']);
+  seedArticle(ss.getSheetByName('Articles'), {});
+  const lock = createFakeLock();
+  const names = [];
+  for (let i = 0; i < 21; i++) {
+    names.push('@user' + String(i).padStart(3, '0'));
+  }
+
+  const result = createReplyForRole(ss, lock, 'user', makeInput({ content: names.join(' ') }));
+
+  expect(result.success).toBe(false);
+  expect(result.error).toContain('20');
+  expect(ss.getSheetByName('Replies').getLastRow()).toBe(1); // 只有標題列
 });

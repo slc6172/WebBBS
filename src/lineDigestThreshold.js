@@ -7,9 +7,9 @@ var LINE_DIGEST_IMAGE_THRESHOLD = 99;
 var LINE_DIGEST_CONTENT_LENGTH_THRESHOLD = 8000;
 
 /**
- * 判斷某群組目前暫存的內容是否達到分段收割門檻：圖片數 ≥3 或文字量 ≥8000
- * 字元，任一即可觸發，兩者以「群組」為單位各自獨立計算（由呼叫端負責只
- * 傳入單一群組的暫存內容彙總）。
+ * 判斷某群組目前暫存的內容是否達到分段收割門檻：圖片數 ≥99 或文字量
+ * ≥8000 字元，任一即可觸發，兩者以「群組」為單位各自獨立計算（由呼叫端
+ * 負責只傳入單一群組的暫存內容彙總）。
  * @param {{imageCount: number, contentLength: number}} state
  * @returns {boolean}
  */

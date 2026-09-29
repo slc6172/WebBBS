@@ -1,4 +1,4 @@
-const { registerUser } = require('../src/register');
+const { registerUser_: registerUser } = require('../src/register');
 const { ensureSchema } = require('../src/schema');
 const { createFakeSpreadsheet } = require('./doubles/fakeSpreadsheet');
 const { createFakeLock } = require('./doubles/fakeLock');
@@ -8,9 +8,13 @@ function fakeDigest(input) {
 }
 
 function makeInput(overrides) {
+  // mycr 第 15 輪票 02：密碼最短長度提高到 8 碼並加入常見弱密碼黑名單
+  // 後，原本的 fixture 密碼 'password123' 剛好命中黑名單——這支測試檔
+  // 本身測的是「寫入列的機制」，不是密碼政策，換一個不在黑名單內、長度
+  // 仍然合格的密碼即可，不影響這個檔案原本要驗證的行為。
   return Object.assign({
     userId: 'alice01',
-    password: 'password123',
+    password: 'correct-horse-battery-staple',
     salt: 'fixed-salt-for-test',
     createdAt: '2026/07/30 12:00:00'
   }, overrides);

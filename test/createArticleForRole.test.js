@@ -1,4 +1,4 @@
-const { createArticleForRole } = require('../src/postArticle');
+const { createArticleForRole_: createArticleForRole } = require('../src/postArticle');
 const { ensureSchema } = require('../src/schema');
 const { createFakeSpreadsheet } = require('./doubles/fakeSpreadsheet');
 const { createFakeLock } = require('./doubles/fakeLock');
@@ -127,4 +127,43 @@ test('when createArticleForRole is rejected (e.g. no permission), no mention is 
   createArticleForRole(ss, lock, 'newbie', makeInput({ content: '@bob0002 快來看' }));
 
   expect(getPendingMentions(ss, 'bob0002')).toEqual([]);
+});
+
+test('API4: createArticleForRole rejects content with more than 20 distinct @mentions, and the article is never written', () => {
+  const ss = createFakeSpreadsheet();
+  ensureSchema(ss);
+  seedBoard(ss, ['gossip', '八卦板', '閒聊', 1, '', '', 'ALL']);
+  const lock = createFakeLock();
+  const names = [];
+  for (let i = 0; i < 21; i++) {
+    names.push('@user' + String(i).padStart(3, '0'));
+  }
+
+  const result = createArticleForRole(ss, lock, 'user', makeInput({ content: names.join(' ') }));
+
+  expect(result.success).toBe(false);
+  expect(result.error).toContain('20');
+  expect(ss.getSheetByName('Articles').getLastRow()).toBe(1); // 只有標題列，文章沒被寫入
+});
+
+test('API4: a title+content combination that only exceeds the mention limit when counted together is still rejected', () => {
+  const ss = createFakeSpreadsheet();
+  ensureSchema(ss);
+  seedBoard(ss, ['gossip', '八卦板', '閒聊', 1, '', '', 'ALL']);
+  const lock = createFakeLock();
+  const titleNames = [];
+  for (let i = 0; i < 10; i++) {
+    titleNames.push('@t' + String(i).padStart(3, '0'));
+  }
+  const contentNames = [];
+  for (let i = 0; i < 15; i++) {
+    contentNames.push('@c' + String(i).padStart(3, '0'));
+  }
+
+  const result = createArticleForRole(ss, lock, 'user', makeInput({
+    title: titleNames.join(' '),
+    content: contentNames.join(' ')
+  }));
+
+  expect(result.success).toBe(false);
 });

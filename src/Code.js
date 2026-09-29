@@ -1,8 +1,8 @@
 // GAS entry point. Wires the unit-tested seam functions in schema.js /
-// ping.js / bootstrap.js to the real GAS APIs (SpreadsheetApp,
-// HtmlService). All .js files in a clasp project share one global
-// namespace at runtime, so ensureSchema / pingRoundTrip /
-// parseBootstrapParams are directly callable here without any import.
+// bootstrap.js to the real GAS APIs (SpreadsheetApp, HtmlService). All
+// .js files in a clasp project share one global namespace at runtime,
+// so ensureSchema / parseBootstrapParams are directly callable here
+// without any import.
 //
 // This file is intentionally thin glue: it is NOT covered by the Node
 // unit tests (SpreadsheetApp/HtmlService only exist inside the Apps
@@ -205,11 +205,11 @@ function clearPendingImageUrls_(cache, token) {
  * postArticleFromForm/editArticleFromForm 最後寫入文章時會驗證使用者聲稱
  * 要用的連結是否真的來自這裡，避免繞過這支函式直接偽造任意字串。
  *
- * 只要求呼叫者是已登入的有效 session，沒有額外檢查 articlePost/
- * articleManageOwn 權限——跟原本 postArticleFromForm 裡「先上傳圖片、
- * 最後才在 createArticleForRole 檢查權限」是同一個既有行為，不是這裡
- * 新增的漏洞（這張圖最終能不能真的被用進一篇文章，還是看 createArticleForRole/
- * editArticleForRole 那一步）。
+ * 除了要求呼叫者是已登入的有效 session，也會檢查角色是否真的有
+ * articlePost 權限（見下方標註「安全性審查 M-1 修復」的段落）——這支
+ * 文件先前的版本在 M-1 修復之前寫的是「沒有額外檢查權限」，跟 M-1
+ * 修好之後的實際行為已經不一致，`/mycr` 全新視角複掃 Finding 4 發現
+ * 後更新為目前這個說法，避免之後被誤判成還沒修的洞。
  * @param {string} token
  * @param {Array<{data:string, mimeType:string, fileName:string}>} images - 一個批次（不是全部）
  * @returns {{success:boolean, urls?:string[], error?:string}}
@@ -227,8 +227,8 @@ function uploadImageBatch(token, images) {
   // 濫用（上傳的檔案一律設成「知道連結的任何人都能看」，見審查報告 M-1）。
   // 跟 postArticleFromForm 用同一套 getSessionRole + 權限旗標檢查方式，只是
   // 這裡不需要 role 變數留著給下面用，直接判斷完就地 return。
-  var role = getSessionRole(cache, ss, token);
-  if (!getRolePermissions(ss, role).articlePost) {
+  var role = getSessionRole_(cache, ss, token);
+  if (!getRolePermissions_(ss, role).articlePost) {
     return { success: false, error: '權限不足' };
   }
   if (!images || images.length === 0) {
@@ -253,9 +253,19 @@ function uploadImageBatch(token, images) {
   // 順手一起擋，避免這個上傳端點被拿去存放跟圖片無關的任意檔案。純判斷邏輯
   // 抽到 imageStorage.js 的 validateImageMimeType（有自動化測試覆蓋），這裡
   // 只負責在真正呼叫 Drive 上傳之前擋下不合法的批次。
+  //
+  // 效能/資安複查時發現的問題（見對話紀錄，`/mycr` 深層複掃）：
+  // Index.html 的 5MB 單張圖片上限只在瀏覽器端檢查，這裡補上對應的伺服器
+  // 端防線——已登入且有發文權限的使用者，原本可以繞過前端直接呼叫這支
+  // 端點送出遠大於 5MB 的資料。跟格式檢查放在同一個迴圈、同一個「真正
+  // 呼叫 Drive 上傳之前」的攔截點，效能影響可忽略（見 validateImageDataSize
+  // 的函式說明），且在拒絕情境下反而省下原本會浪費掉的 Drive 呼叫。
   for (var i = 0; i < images.length; i++) {
     if (!validateImageMimeType(images[i] && images[i].mimeType).valid) {
       return { success: false, error: '檔案格式不支援，僅限圖片' };
+    }
+    if (!validateImageDataSize(images[i] && images[i].data).valid) {
+      return { success: false, error: '圖片檔案大小超過上限' };
     }
   }
   var urls = uploadArticleImages_(images);
@@ -283,7 +293,11 @@ function toSafeScriptJson_(value) {
 }
 
 function doGet(e) {
-  ensureSchema(getSpreadsheet_(), buildRoleValidationRule_);
+  // mycr 第 15 輪票 14（見 F-07）：改用版本閘門，不是每次匿名載入頁面
+  // 都重跑一次完整的 ensureSchema。見 schema.js 裡 ensureSchemaIfNeeded_
+  // 上方的完整說明，包含「schema 結構異動時必須手動執行
+  // forceEnsureSchema」這條流程規則。
+  ensureSchemaIfNeeded_(getSpreadsheet_(), createPropertiesInterface_(), buildRoleValidationRule_);
 
   var bootstrapData = parseBootstrapParams(e);
   var template = HtmlService.createTemplateFromFile('Index');
@@ -300,8 +314,20 @@ function doGet(e) {
  * Generates salt/createdAt here (system clock + randomness are GAS-only
  * concerns) and wires the real Utilities/LockService into registerUser,
  * which itself stays pure and unit-testable.
+ *
+ * 提高註冊成本（見對話紀錄）：在真正碰 Users 表之前，先檢查全站共用的
+ * 註冊節流配額（checkAndConsumeRegistrationQuota_，見 register.js 開頭
+ * 的完整說明）。不管接下來 registerUser 本身會不會因為格式錯誤/userId
+ * 重複而失敗，這裡都先算進配額——目的是限制「打到這個端點」的總次數，
+ * 不是只限制「真的註冊成功」的次數，被拒絕的請求完全不會碰到試算表，
+ * 不浪費任何讀寫成本。
  */
 function registerUserFromForm(userId, password) {
+  var cache = CacheService.getScriptCache();
+  if (!checkAndConsumeRegistrationQuota_(cache).allowed) {
+    return { success: false, error: '註冊嘗試次數過多，請稍後再試' };
+  }
+
   var salt = Utilities.getUuid();
   var createdAt = Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyy/MM/dd HH:mm:ss');
   var lock = LockService.getScriptLock();
@@ -309,7 +335,7 @@ function registerUserFromForm(userId, password) {
     return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, s);
   };
 
-  return registerUser(getSpreadsheet_(), lock, digestFn, {
+  return registerUser_(getSpreadsheet_(), lock, digestFn, {
     userId: userId,
     password: password,
     salt: salt,
@@ -340,7 +366,7 @@ function registerUserFromForm(userId, password) {
 function getMyStatus(token) {
   var cache = CacheService.getScriptCache();
   var ss = getSpreadsheet_();
-  var role = getSessionRole(cache, ss, token);
+  var role = getSessionRole_(cache, ss, token);
   var userId = cache.get(SESSION_PREFIX + token);
   var snapshot = buildRoleSnapshot(ss, role);
   if (userId) {
@@ -368,6 +394,14 @@ function getMyStatus(token) {
 function getBoardsFromToken(token) {
   var cache = CacheService.getScriptCache();
   var ss = getSpreadsheet_();
+  // mycr 第 15 輪票 11（見 F-02）：跟寫入路徑（getSessionRole_）一樣，讀取
+  // 路徑現在也要能偵測「這個 token 是密碼重設前核發的」或「已經登出」，
+  // 用純快取比對（isSessionValidFor_），不重讀 Users 表，見該函式的完整
+  // 說明。回傳空陣列，跟既有的「沒有快取(未登入/過期)」情境用同一種
+  // 空回應形狀，前端不用另外處理新的錯誤狀態。
+  if (!isSessionValidFor_(cache, token)) {
+    return JSON.stringify([]);
+  }
   var snapshot = getSessionSnapshot(cache, token);
   var boards = listBoards(ss).filter(function (b) {
     return snapshotAllowsBoardArticleRead(snapshot, b.boardId);
@@ -416,6 +450,19 @@ function markBoardSeenFromToken(token, boardId) {
     return; // session 已過期/無效，安靜跳過，不讓這個背景動作干擾其他操作
   }
 
+  // mycr 第 15 輪票 10（見 F-03）：只接受這個使用者目前角色實際有權限
+  // 瀏覽的看板 ID——用 snapshot 裡已經算好的 allowedBoardIds（跟
+  // getBoardsFromToken 同一份快照，不額外多讀一次試算表），不接受任意
+  // 字串。單次標記已讀原本沒有長度/筆數上限，一次呼叫就能把
+  // lastSeenBoards 撐到接近 Sheets 單一儲存格 50,000 字元的上限，拖慢
+  // 每一次授權都要整表讀取 Users 的所有人；限制在 allowedBoardIds 範圍內
+  // 之後，上限自然等於這個角色實際看得到的看板數，不需要另外設一個
+  // 數字上限。
+  var snapshot = getSessionSnapshot(cache, token);
+  if (!snapshotIncludesBoard(snapshot, boardId)) {
+    return;
+  }
+
   var usersSheet = ss.getSheetByName('Users');
   var userRecord = getUserRecord_(usersSheet, userId);
   if (!userRecord) {
@@ -457,6 +504,10 @@ function markBoardSeenFromToken(token, boardId) {
 function getBoardBulkFromToken(token, boardId, pageIndex, clientVersion, lastSeenAt) {
   var cache = CacheService.getScriptCache();
   var ss = getSpreadsheet_();
+  // mycr 第 15 輪票 11（見 F-02）：見 getBoardsFromToken 開頭同一段說明。
+  if (!isSessionValidFor_(cache, token)) {
+    return JSON.stringify({ unchanged: false, version: null, articles: [], repliesByArticleId: {}, hasMore: false });
+  }
   var snapshot = getSessionSnapshot(cache, token);
   var allowed = snapshotAllowsBoardArticleRead(snapshot, boardId);
   var versionKey = boardId + ':page' + pageIndex;
@@ -470,8 +521,12 @@ function getBoardBulkFromToken(token, boardId, pageIndex, clientVersion, lastSee
     return JSON.stringify({ unchanged: true, version: currentVersion });
   }
 
-  var page = getBoardBulkPage(ss, boardId, pageIndex, BOARD_BULK_PAGE_SIZE);
-  var version = Utilities.getUuid();
+  var page = getBoardBulkPage_(ss, boardId, pageIndex, BOARD_BULK_PAGE_SIZE);
+  // mycr 第 15 輪票 08（見 F-08）：只有版本 key 還不存在時才產生新的
+  // UUID；已經有版本時沿用它——原本每次「真的重讀了這一頁」都無條件
+  // 產生新版本，會讓兩個使用者輪流讀同一頁時互相打掉對方剛存好的快取，
+  // 即使期間完全沒有任何寫入發生。
+  var version = currentVersion || Utilities.getUuid();
   bumpBoardVersion(cache, versionKey, version);
   // 未讀/新回覆徽章（ticket 01）：lastSeenAt 是前端從 getBoardsFromToken 頁面
   // 載入時就已經拿到的值，這裡原封不動當參數收下——不是機密，也不影響誰能
@@ -480,11 +535,19 @@ function getBoardBulkFromToken(token, boardId, pageIndex, clientVersion, lastSee
   // unchanged/!allowed 分支）時才套用，跟版本快取機制完全不衝突：這一頁
   // 版本不變時，前端沿用它自己先前已經標好徽章的舊資料即可。
   var annotatedArticles = computeArticleUnreadFlags_(page.articles, page.repliesByArticleId, lastSeenAt || '');
+  // mycr 第 15 輪票 09（見 F-01）：批量端點依 snapshot 的 replyRead 過濾
+  // 回覆內容，跟單篇端點（getArticleDetailFromToken/
+  // getArticleDetailForSnapshot_）行為一致——只隱藏回覆內容，留言數字
+  // （annotatedArticles 裡每篇文章自己的 replyCount）不受影響，未讀徽章
+  // 依賴這個數字正常顯示。
+  var repliesForResponse = (snapshot && snapshot.permissions && snapshot.permissions.replyRead)
+    ? page.repliesByArticleId
+    : {};
   return JSON.stringify({
     unchanged: false,
     version: version,
     articles: annotatedArticles,
-    repliesByArticleId: page.repliesByArticleId,
+    repliesByArticleId: repliesForResponse,
     hasMore: page.hasMore,
     // 跳頁功能用（見 Index.html 的 pager bar）：unchanged 分支跟 !allowed 分支
     // 沒有真的呼叫 getBoardBulkPage，故意不帶這兩個欄位——前端遇到沒有這兩個
@@ -519,6 +582,10 @@ function getBoardBulkFromToken(token, boardId, pageIndex, clientVersion, lastSee
 function getArticleDetailFromToken(token, articleId, clientVersion) {
   var cache = CacheService.getScriptCache();
   var ss = getSpreadsheet_();
+  // mycr 第 15 輪票 11（見 F-02）：見 getBoardsFromToken 開頭同一段說明。
+  if (!isSessionValidFor_(cache, token)) {
+    return JSON.stringify({ unchanged: false, version: null, article: null, replies: [] });
+  }
   var snapshot = getSessionSnapshot(cache, token);
   var currentVersion = getArticleVersion(cache, articleId);
   var allowed = !!(snapshot && snapshot.permissions && snapshot.permissions.articleRead);
@@ -527,7 +594,7 @@ function getArticleDetailFromToken(token, articleId, clientVersion) {
     return JSON.stringify({ unchanged: true, version: currentVersion });
   }
 
-  var detail = getArticleDetailForSnapshot(ss, snapshot, articleId);
+  var detail = getArticleDetailForSnapshot_(ss, snapshot, articleId);
   var version = currentVersion;
   if (allowed && !version && detail.article) {
     version = Utilities.getUuid();
@@ -545,11 +612,15 @@ function getArticleDetailFromToken(token, articleId, clientVersion) {
 function deleteReplyFromForm(token, articleId, replyId) {
   var cache = CacheService.getScriptCache();
   var ss = getSpreadsheet_();
-  var role = getSessionRole(cache, ss, token);
+  var role = getSessionRole_(cache, ss, token);
   var requestingUserId = cache.get(SESSION_PREFIX + token); // 權限系統 ticket 07：非 admin 現在也可能需要通過本人檢查
   var lock = LockService.getScriptLock();
+  // A09：只有 admin 代管別人回覆時才會真的用到，一般刪自己回覆的路徑
+  // 這個值算了也不會被用到，但算一次的成本可忽略，不值得為了省這個
+  // 分支再判斷一次角色。
+  var nowTimestamp = Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyy/MM/dd HH:mm:ss');
 
-  var result = deleteReplyForRole(ss, lock, role, requestingUserId, articleId, replyId);
+  var result = deleteReplyForRole_(ss, lock, role, requestingUserId, articleId, replyId, nowTimestamp);
 
   if (result.success) {
     var newVersion = Utilities.getUuid();
@@ -582,15 +653,17 @@ function deleteReplyFromForm(token, articleId, replyId) {
 function deleteArticleFromForm(token, articleId) {
   var cache = CacheService.getScriptCache();
   var ss = getSpreadsheet_();
-  var role = getSessionRole(cache, ss, token);
+  var role = getSessionRole_(cache, ss, token);
   var requestingUserId = cache.get(SESSION_PREFIX + token);
   var lock = LockService.getScriptLock();
   var existingArticle = getArticleById(ss, articleId); // 刪除前先查，刪掉之後這一列就不在了，查不到 boardId 了
   // 跳頁功能：頁次也要在刪除前查——刪掉之後這篇文章從排序中消失，
   // findArticlePageIndex 會回傳 null，就找不到它「本來」在哪一頁了
   var existingPageIndex = existingArticle ? findArticlePageIndex(ss, existingArticle.boardId, articleId, BOARD_BULK_PAGE_SIZE) : null;
+  // A09：只有 admin 代管別人文章時才會真的用到，理由同 deleteReplyFromForm。
+  var nowTimestamp = Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyy/MM/dd HH:mm:ss');
 
-  var result = deleteArticleForRole(ss, lock, role, requestingUserId, articleId, createDriveInterface_());
+  var result = deleteArticleForRole_(ss, lock, role, requestingUserId, articleId, createDriveInterface_(), nowTimestamp);
 
   if (result.success && existingArticle) {
     var newVersion = Utilities.getUuid();
@@ -672,9 +745,21 @@ function resolveImageSlots_(imageSlots, existingImageUrls) {
 function editArticleFromForm(token, articleId, title, content, imageSlots) {
   var cache = CacheService.getScriptCache();
   var ss = getSpreadsheet_();
-  var role = getSessionRole(cache, ss, token);
+  var role = getSessionRole_(cache, ss, token);
   var requestingUserId = cache.get(SESSION_PREFIX + token);
+  // `/mycr` 全新視角複掃 Finding 1（縱深防禦）：resolveImageSlots_ 現在已經
+  // 從根本拒絕 {data,...} 物件形狀（見 imageStorage.js 的 resolveImageSlots），
+  // 所以下面這段圖片處理邏輯不會再對任何呼叫者產生真正的 Drive 寫入副作用。
+  // 這裡另外加一道提早返回，把「先確認呼叫者身分，才開始做任何處理」這個
+  // 原則直接套用在這支函式上——避免之後如果有人在這裡重新加回某種「新
+  // 圖片」處理邏輯時，又不小心把它接在身分檢查之前。這裡檢查的是「有沒有
+  // 一個看起來有效的 session」，不是「有沒有編輯這篇文章的權限」——後者的
+  // 檢查依然留在 editArticleForRole_ 內部，位置不變。
+  if (!requestingUserId) {
+    return { success: false, error: '請重新登入' };
+  }
   var editedAt = Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyy/MM/dd HH:mm:ss');
+  var lock = LockService.getScriptLock(); // mycr 第 15 輪票 12：見 editArticle.js 開頭的完整說明
   var existingArticle = getArticleById(ss, articleId); // 先查出 boardId，等下成功才知道要 bump 哪個看板的版本
   // 跳頁功能：編輯不會改變 createdAt，文章排序位置不變，這裡先查跟編輯後再查
   // 結果一樣，習慣上還是跟 existingArticle 一起在異動前查好
@@ -696,7 +781,7 @@ function editArticleFromForm(token, articleId, title, content, imageSlots) {
     return { success: false, error: resolvedSlots.error };
   }
 
-  var result = editArticleForRole(ss, role, requestingUserId, articleId, {
+  var result = editArticleForRole_(ss, lock, role, requestingUserId, articleId, {
     title: title,
     content: content,
     editedAt: editedAt,
@@ -740,16 +825,22 @@ function editArticleFromForm(token, articleId, title, content, imageSlots) {
  * SECURITY NOTE: author is looked up from the session token via the
  * cache, never accepted as a parameter from the client — this is the
  * actual place "the frontend can't spoof who posted this" is enforced.
- * articleId/createdAt are generated here for the same reason ticket 01's
- * pingRoundTrip and ticket 02's registerUser take them as input: the
- * core logic in postArticle.js stays free of system-clock/randomness
- * calls and is unit-testable.
+ * articleId/createdAt are generated here for the same reason ticket 02's
+ * registerUser takes them as input: the core logic in postArticle.js
+ * stays free of system-clock/randomness calls and is unit-testable.
  */
 function postArticleFromForm(token, boardId, title, content, imageUrls) {
   var cache = CacheService.getScriptCache();
-  var ss = getSpreadsheet_();
-  var role = getSessionRole(cache, ss, token);
   var author = cache.get(SESSION_PREFIX + token); // the verified userId, not a form field
+  // API6：節流檢查刻意放在 getSpreadsheet_()/getSessionRole_ 之前——這兩
+  // 個都是純 cache 讀取，被節流擋下來的這次請求完全不會碰到
+  // SpreadsheetApp，比先前的執行順序（先解析角色才檢查節流）更省，不是
+  // 額外多花的成本。
+  if (!checkAndConsumePostQuota_(cache, author).allowed) {
+    return { success: false, error: '發文太頻繁，請稍後再試' };
+  }
+  var ss = getSpreadsheet_();
+  var role = getSessionRole_(cache, ss, token);
   var lock = LockService.getScriptLock();
   var articleId = Utilities.getUuid();
   var createdAt = Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyy/MM/dd HH:mm:ss');
@@ -773,7 +864,7 @@ function postArticleFromForm(token, boardId, title, content, imageUrls) {
     }
   }
 
-  var result = createArticleForRole(ss, lock, role, {
+  var result = createArticleForRole_(ss, lock, role, {
     articleId: articleId,
     boardId: boardId,
     title: title,
@@ -824,14 +915,19 @@ function postArticleFromForm(token, boardId, title, content, imageUrls) {
  */
 function postReplyFromForm(token, articleId, content) {
   var cache = CacheService.getScriptCache();
-  var ss = getSpreadsheet_();
-  var role = getSessionRole(cache, ss, token);
   var author = cache.get(SESSION_PREFIX + token);
+  // API6：跟 postArticleFromForm 同一個理由、同一種順序調整——見該處說明。
+  // 文章跟回覆共用同一個節流計數器（同一個 userId 底下，洗版就是洗版）。
+  if (!checkAndConsumePostQuota_(cache, author).allowed) {
+    return { success: false, error: '發文太頻繁，請稍後再試' };
+  }
+  var ss = getSpreadsheet_();
+  var role = getSessionRole_(cache, ss, token);
   var lock = LockService.getScriptLock();
   var replyId = Utilities.getUuid();
   var createdAt = Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyy/MM/dd HH:mm:ss');
 
-  var result = createReplyForRole(ss, lock, role, {
+  var result = createReplyForRole_(ss, lock, role, {
     replyId: replyId,
     articleId: articleId,
     author: author,
@@ -879,7 +975,7 @@ function loginFromForm(userId, password) {
   };
   var nowTimestamp = Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyy/MM/dd HH:mm:ss');
 
-  return login(getSpreadsheet_(), cache, tokenGenerator, digestFn, nowTimestamp, {
+  return login_(getSpreadsheet_(), cache, tokenGenerator, digestFn, nowTimestamp, {
     userId: userId,
     password: password
   });
@@ -900,17 +996,13 @@ function loginFromForm(userId, password) {
 function logoutFromForm(token) {
   var cache = CacheService.getScriptCache();
   cache.remove(SESSION_PREFIX + token);
+  // `/mycr` 全新視角複掃 Finding 5c：credentialVersion 機制（見 login.js/
+  // permissions.js）額外開的這把平行 cache key，登出時一併清掉。純粹是
+  // 整潔度考量——不清也不構成任何安全風險，因為 getSessionRole_ 第一步
+  // 就檢查 SESSION_PREFIX 是否存在，SESSION_PREFIX 被移除之後這把孤兒
+  // cache 條目永遠不會再被讀到，只是留著等自己的 TTL 到期而已。
+  cache.remove(SESSION_VERSION_PREFIX + token);
   removeSessionSnapshot(cache, token);
-}
-
-/**
- * Callable from the page via google.script.run to manually verify the
- * write -> read path against the real spreadsheet (ticket 01's
- * "walking skeleton" proof).
- */
-function runPingCheck() {
-  var value = 'ping-' + new Date().getTime();
-  return pingRoundTrip(getSpreadsheet_(), value);
 }
 
 /**
@@ -921,7 +1013,7 @@ function runPingCheck() {
 function getLeaderboardFromToken(token) {
   var cache = CacheService.getScriptCache();
   var ss = getSpreadsheet_();
-  var role = getSessionRole(cache, ss, token);
+  var role = getSessionRole_(cache, ss, token);
 
-  return JSON.stringify(getLeaderboardForRole(ss, role));
+  return JSON.stringify(getLeaderboardForRole_(ss, role));
 }

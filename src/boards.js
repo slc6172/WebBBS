@@ -7,7 +7,7 @@
 var _permissionsModule = (typeof require !== 'undefined') ? require('./permissions') : null;
 
 function getRolePermissionsFor_(spreadsheet, role) {
-  return (_permissionsModule ? _permissionsModule.getRolePermissions : getRolePermissions)(spreadsheet, role);
+  return (_permissionsModule ? _permissionsModule.getRolePermissions_ : getRolePermissions_)(spreadsheet, role);
 }
 
 /**
@@ -54,7 +54,7 @@ function listBoards(spreadsheet) {
  * @param {string|null} role
  * @returns {Array}
  */
-function getBoardsForRole(spreadsheet, role) {
+function getBoardsForRole_(spreadsheet, role) {
   if (!getRolePermissionsFor_(spreadsheet, role).articleRead) {
     return [];
   }
@@ -132,10 +132,10 @@ function boardAllowsRoleById(spreadsheet, boardId, role) {
 function buildRoleSnapshot(spreadsheet, role) {
   return {
     permissions: getRolePermissionsFor_(spreadsheet, role),
-    allowedBoardIds: getBoardsForRole(spreadsheet, role).map(function (b) { return b.boardId; })
+    allowedBoardIds: getBoardsForRole_(spreadsheet, role).map(function (b) { return b.boardId; })
   };
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { listBoards: listBoards, getBoardsForRole: getBoardsForRole, boardAllowsRole: boardAllowsRole, boardAllowsRoleById: boardAllowsRoleById, buildRoleSnapshot: buildRoleSnapshot };
+  module.exports = { listBoards: listBoards, getBoardsForRole_: getBoardsForRole_, boardAllowsRole: boardAllowsRole, boardAllowsRoleById: boardAllowsRoleById, buildRoleSnapshot: buildRoleSnapshot };
 }

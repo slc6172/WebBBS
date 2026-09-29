@@ -1,4 +1,4 @@
-const { getBoardBulkPage } = require('../src/boardBulk');
+const { getBoardBulkPage_: getBoardBulkPage } = require('../src/boardBulk');
 const { ensureSchema } = require('../src/schema');
 const { createFakeSpreadsheet } = require('./doubles/fakeSpreadsheet');
 
@@ -238,4 +238,32 @@ test('getBoardBulkPage returns totalCount as the board\'s full article count reg
   expect(page0.totalCount).toBe(3);
   expect(page1.totalCount).toBe(3);
   expect(page0.pageSize).toBe(2);
+});
+
+// mycr 第 15 輪票 05（見 F-15）：修法前既有的列，如果 title/content
+// 剛好長得像數字/日期/時間/布林值，可能已經被 Sheets 自動轉成對應型別。
+// 這裡直接塞一個非字串值模擬「修法前就已經被轉換過」的既有資料，確認
+// 讀取路徑對舊資料仍然寬容，回傳的是字串，不是原始的 Date/Number/
+// Boolean 值。
+test('getBoardBulkPage coerces non-string title/content (from pre-fix rows already auto-converted by Sheets) to strings', () => {
+  const ss = createFakeSpreadsheet();
+  ensureSchema(ss);
+  const articlesSheet = ss.getSheetByName('Articles');
+  seedArticle(articlesSheet, { articleId: 'a1', title: 12345, content: true });
+
+  const result = getBoardBulkPage(ss, 'gossip', 0, 300);
+
+  expect(result.articles[0].title).toBe('12345');
+  expect(result.articles[0].content).toBe('true');
+});
+
+test('getBoardBulkPage coerces a non-string reply content (from a pre-fix row) to a string', () => {
+  const ss = createFakeSpreadsheet();
+  ensureSchema(ss);
+  seedArticle(ss.getSheetByName('Articles'), { articleId: 'a1' });
+  seedReply(ss.getSheetByName('Replies'), { articleId: 'a1', content: 5678 });
+
+  const result = getBoardBulkPage(ss, 'gossip', 0, 300);
+
+  expect(result.repliesByArticleId.a1[0].content).toBe('5678');
 });

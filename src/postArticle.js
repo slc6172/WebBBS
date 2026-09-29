@@ -6,9 +6,24 @@ var _userStatsModule = (typeof require !== 'undefined') ? require('./userStats')
 var _boardsModule = (typeof require !== 'undefined') ? require('./boards') : null;
 var _imageStorageModule = (typeof require !== 'undefined') ? require('./imageStorage') : null;
 var _mentionsModule = (typeof require !== 'undefined') ? require('./mentions') : null;
+// `/mycr` 全新視角複掃：escapeFormulaInjection 本體移到 formulaInjection.js
+// （零依賴葉節點模組，見該檔案開頭註解），避免循環 require。這裡的 wrapper
+// 刻意取名 escapeFormulaInjectionFor_（不是 escapeFormulaInjection 本身）
+// ——GAS 把所有檔案併成同一個全域環境執行，如果這裡也宣告一個叫
+// escapeFormulaInjection 的頂層函式，會跟 formulaInjection.js 真正的那個
+// 全域函式同名衝突，跟現有 xFor_() 那組 wrapper 的命名理由一致。
+var _formulaInjectionModule = (typeof require !== 'undefined') ? require('./formulaInjection') : null;
+
+function escapeFormulaInjectionFor_(value) {
+  return (_formulaInjectionModule ? _formulaInjectionModule.escapeFormulaInjection : escapeFormulaInjection)(value);
+}
 
 function recordMentionsForContentFor_(spreadsheet, lock, params) {
   return (_mentionsModule ? _mentionsModule.recordMentionsForContent_ : recordMentionsForContent_)(spreadsheet, lock, params);
+}
+
+function validateMentionCountFor_(text) {
+  return (_mentionsModule ? _mentionsModule.validateMentionCount_ : validateMentionCount_)(text);
 }
 
 // 圖片張數突破：跟 imageStorage.js 的 resolveImageSlots 共用同一個上限
@@ -25,7 +40,7 @@ function validateImageCountFor_(count) {
 }
 
 function getRolePermissionsFor_(spreadsheet, role) {
-  return (_permissionsModule ? _permissionsModule.getRolePermissions : getRolePermissions)(spreadsheet, role);
+  return (_permissionsModule ? _permissionsModule.getRolePermissions_ : getRolePermissions_)(spreadsheet, role);
 }
 
 function boardAllowsRoleByIdFor_(spreadsheet, boardId, role) {
@@ -67,23 +82,6 @@ function validateArticleContent(content) {
   return { valid: true };
 }
 
-var FORMULA_TRIGGER_CHARS = ['=', '+', '-', '@'];
-
-/**
- * Guards against formula injection: if value starts with a character
- * Sheets would interpret as the start of a formula, prefix it with a
- * single quote to force plain-text interpretation. Otherwise returns
- * value unchanged.
- * @param {string} value
- * @returns {string}
- */
-function escapeFormulaInjection(value) {
-  if (typeof value === 'string' && value.length > 0 && FORMULA_TRIGGER_CHARS.indexOf(value.charAt(0)) !== -1) {
-    return "'" + value;
-  }
-  return value;
-}
-
 /**
  * The actual write: appends the Articles row and bumps the author's stat.
  * No validation, no locking — callers that already hold an appropriate
@@ -102,18 +100,25 @@ function createArticleUnlocked_(spreadsheet, input) {
   // createArticleUnlockedFor_）共用的路徑，那條路徑沒有互動使用者可以
   // 顯示錯誤訊息，所以這裡選擇默默截斷，不是回傳 error（一般發文路徑的
   // 拒絕邏輯在 createArticle 的 validateImageCount 檢查，見該處）。
-  // 安全性審查 M1 修復延伸：title/content 早就有 escapeFormulaInjection，
-  // 陣列裡的每一個 URL 一樣逐一套用，不因為改成 JSON 陣列儲存就漏掉
-  // ——縱深防禦，不依賴 Code.js/resolveImageSlots_ 是唯一防線。
-  var escapedImageUrls = imageUrls
-    .slice(0, maxImagesPerArticleFor_())
-    .map(function (u) { return escapeFormulaInjection(u); });
+  //
+  // mycr 第 15 輪票 05：這裡原本對陣列裡每個 URL 逐一套用
+  // escapeFormulaInjectionFor_（「縱深防禦」），但 imageUrls 是先組成
+  // 陣列、整包 JSON.stringify 之後才寫進 Articles 表第 10 欄「一整格」，
+  // 不是每個 URL 各自佔一格。Sheets 的公式/型別誤判只發生在整格層級，
+  // 這一整格永遠是 `[` 開頭的 JSON 陣列字串，不可能被誤判——對陣列元素
+  // 逐一跳脫從來沒有真的防到任何風險。escapeFormulaInjection 現在改成
+  // 「非空字串一律加前綴」後，繼續套用會讓每一個圖片連結在
+  // parseImageUrlsCell_ 讀回來時都多一個游離的撇號（`parseImageUrlsCell_`
+  // 只是單純 JSON.parse，不會像 Sheets 對整格開頭撇號那樣自動去除），
+  // 等於讓每一篇文章的每一張圖片都直接打不開——不是可接受的邊界代價，
+  // 是會實際壞掉的功能，所以拿掉這裡的跳脫。
+  var escapedImageUrls = imageUrls.slice(0, maxImagesPerArticleFor_());
   sheet.appendRow([
     input.articleId,
     input.boardId,
-    escapeFormulaInjection(input.title),
+    escapeFormulaInjectionFor_(input.title),
     input.author,
-    escapeFormulaInjection(input.content),
+    escapeFormulaInjectionFor_(input.content),
     "'" + input.createdAt,
     '',
     '',
@@ -138,6 +143,17 @@ function createArticle(spreadsheet, lock, input) {
   var contentCheck = validateArticleContent(input.content);
   if (!contentCheck.valid) {
     return { success: false, error: contentCheck.error };
+  }
+  // API4（換角度複查輪，對照 OWASP API Security Top 10 2023）：跟標題/
+  // 內容驗證同一個位置、同一種「拒絕整篇貼文,讓使用者自行調整」處理
+  // 方式——見 mentions.js 的 validateMentionCount_ 開頭註解說明為什麼
+  // 這裡選擇拒絕而不是靜默截斷。驗證的字串刻意跟下面
+  // recordMentionsForContentFor_ 實際掃描的字串完全一致（title+content
+  // 合併),不能只驗 content——標題雖然短(上限100字),但也算在同一次
+  // 掃描範圍內，只驗 content 會漏算標題裡的 @提及。
+  var mentionCountCheck = validateMentionCountFor_(input.title + '\n' + input.content);
+  if (!mentionCountCheck.valid) {
+    return { success: false, error: mentionCountCheck.error };
   }
   // 圖片張數突破：這裡是使用者互動發文的路徑，超過上限直接拒絕、讓使用者
   // 自行調整（不像 createArticleUnlocked_ 給 LINE 彙整發文那樣默默截斷）。
@@ -166,7 +182,7 @@ function createArticle(spreadsheet, lock, input) {
  * @param {{articleId: string, boardId: string, title: string, content: string, author: string, createdAt: string}} input
  * @returns {{success: boolean, error?: string}}
  */
-function createArticleForRole(spreadsheet, lock, role, input) {
+function createArticleForRole_(spreadsheet, lock, role, input) {
   if (!getRolePermissionsFor_(spreadsheet, role).articlePost) {
     return { success: false, error: '權限不足' };
   }
@@ -198,9 +214,9 @@ if (typeof module !== 'undefined' && module.exports) {
     ARTICLE_CONTENT_MAX_LENGTH: ARTICLE_CONTENT_MAX_LENGTH,
     validateArticleTitle: validateArticleTitle,
     validateArticleContent: validateArticleContent,
-    escapeFormulaInjection: escapeFormulaInjection,
+    escapeFormulaInjection: escapeFormulaInjectionFor_,
     createArticle: createArticle,
     createArticleUnlocked_: createArticleUnlocked_,
-    createArticleForRole: createArticleForRole
+    createArticleForRole_: createArticleForRole_
   };
 }

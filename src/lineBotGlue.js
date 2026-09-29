@@ -39,6 +39,12 @@ function excludeRecalledFor_(rows) {
   return (_lineStagingModule ? _lineStagingModule.excludeRecalled : excludeRecalled)(rows);
 }
 
+function buildLineStagingRowFor_(groupId, messageTime, displayName, messageType, content, webhookEventId, recalled) {
+  return (_lineStagingModule ? _lineStagingModule.buildLineStagingRow : buildLineStagingRow)(
+    groupId, messageTime, displayName, messageType, content, webhookEventId, recalled
+  );
+}
+
 function saveArticleImageFor_(drive, properties, base64Data, mimeType, fileName, yyyyMM) {
   return (_imageStorageModule ? _imageStorageModule.saveArticleImage : saveArticleImage)(drive, properties, base64Data, mimeType, fileName, yyyyMM);
 }
@@ -162,7 +168,19 @@ function readLineUserIdRows_(sheet) {
  * @param {string} channelAccessToken
  * @returns {string|null}
  */
+// mycr 第 15 輪票 07（見 L-02）：LINE 的訊息 ID 目前的實際格式是純數字
+// 字串（且長度長到超過 Sheets 數字精度上限，天然不會被誤判成
+// Number——見 formulaInjection.js 開頭跟這個問題相關的討論），這裡先
+// 用最寬鬆但明確的格式驗證擋掉，不是因為目前有已知的攻擊手法，而是
+// 這個字串會被直接串進外部 API 的網址路徑，格式驗證是便宜的第一道
+// 防線，避免格式外的內容（不管來源是什麼）被當成網址的一部分送出去。
+var LINE_MESSAGE_ID_PATTERN = /^\d+$/;
+
 function downloadAndStoreLineImage_(messageId, channelAccessToken) {
+  if (!LINE_MESSAGE_ID_PATTERN.test(messageId)) {
+    console.error('LINE 圖片下載略過：messageId 格式不符預期（非純數字）：' + messageId);
+    return null;
+  }
   try {
     var response = UrlFetchApp.fetch(
       'https://api-data.line.me/v2/bot/message/' + messageId + '/content',
@@ -247,15 +265,9 @@ function captureLineMessage_(spreadsheet, lock, event, channelAccessToken) {
     var displayName = event.source.userId;
     var messageTime = Utilities.formatDate(new Date(event.timestamp), 'Asia/Taipei', 'yyyy/MM/dd HH:mm:ss');
 
-    stagingSheet.appendRow([
-      groupId,
-      "'" + messageTime,
-      displayName,
-      classified.messageType,
-      content,
-      webhookEventId,
-      false
-    ]);
+    stagingSheet.appendRow(buildLineStagingRowFor_(
+      groupId, messageTime, displayName, classified.messageType, content, webhookEventId, false
+    ));
 
     // 剛寫入的這則也要算進門檻判斷，所以在鎖內、appendRow 之後重新讀一次。
     var afterWrite = readLineStagingRows_(stagingSheet).filter(function (row) { return row.groupId === groupId; });
@@ -464,8 +476,16 @@ function handleLineUnsend_(spreadsheet, lock, event) {
  * 判斷該群組是否還有殘餘暫存內容（沒達到一般收割門檻，但換日了仍該
  * 收割送出當天最後一篇）。完全沒有任何暫存對話的群組，不會被觸發任何
  * 發文。由每日 00:05（Asia/Taipei）的 installable trigger 呼叫。
+ *
+ * 資安複審（本輪）：函式名稱結尾刻意加底線——GAS 平台會因此把它排除在
+ * google.script.run 之外，任何載入過網頁的訪客都無法直接呼叫它強迫提前
+ * 截斷、公開發布正在進行中的群組對話。已在 Apps Script 編輯器實測確認：
+ * 結尾底線函式雖然不會出現在「新增觸發條件」面板的函式選擇下拉選單，
+ * 但用程式碼（ScriptApp.newTrigger）以字串指定 handler 名稱時一樣能正常
+ * 建立、正常觸發、正常執行，見 tools/adminMaintenanceTools.gs.js 裡的
+ * 安裝函式與其說明。
  */
-function dailyLineDigestCheck() {
+function dailyLineDigestCheck_() {
   var spreadsheet = getSpreadsheet_();
   var lock = LockService.getScriptLock();
   var cache = CacheService.getScriptCache();
@@ -484,30 +504,6 @@ function dailyLineDigestCheck() {
       harvestGroupDigest_(spreadsheet, lock, cache, groupBoardRow.groupId, groupBoardRow.boardId, groupBoardRow.groupName);
     }
   });
-}
-
-/**
- * 一次性的安裝函式：建立每日 00:05（Asia/Taipei）的 installable
- * time-driven trigger，handler 指向 dailyLineDigestCheck。安裝前先檢查
- * 是否已存在同一個 handler function 的 time-driven trigger，存在就跳過
- * 不重複建立，避免管理者不小心重複執行導致同一天被收割兩次。
- * 在 Apps Script 編輯器手動執行一次即可，不需要重複呼叫。
- */
-function installDailyLineDigestTrigger() {
-  var alreadyInstalled = ScriptApp.getProjectTriggers().some(function (trigger) {
-    return trigger.getHandlerFunction() === 'dailyLineDigestCheck';
-  });
-  if (alreadyInstalled) {
-    return;
-  }
-
-  ScriptApp.newTrigger('dailyLineDigestCheck')
-    .timeBased()
-    .atHour(0)
-    .nearMinute(5)
-    .everyDays(1)
-    .inTimezone('Asia/Taipei')
-    .create();
 }
 
 /**
@@ -561,7 +557,6 @@ if (typeof module !== 'undefined' && module.exports) {
     downloadAndStoreLineImage_: downloadAndStoreLineImage_,
     handleLineUnsend_: handleLineUnsend_,
     harvestGroupDigest_: harvestGroupDigest_,
-    dailyLineDigestCheck: dailyLineDigestCheck,
-    installDailyLineDigestTrigger: installDailyLineDigestTrigger
+    dailyLineDigestCheck_: dailyLineDigestCheck_
   };
 }

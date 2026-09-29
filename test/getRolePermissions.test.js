@@ -1,4 +1,4 @@
-const { getRolePermissions } = require('../src/permissions');
+const { getRolePermissions_: getRolePermissions } = require('../src/permissions');
 const { createFakeSpreadsheet } = require('./doubles/fakeSpreadsheet');
 const { ensureSchema } = require('../src/schema');
 

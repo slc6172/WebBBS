@@ -1,4 +1,4 @@
-const { getBoardBulkPage, findArticlePageIndex } = require('../src/boardBulk');
+const { getBoardBulkPage_: getBoardBulkPage, findArticlePageIndex } = require('../src/boardBulk');
 const { ensureSchema } = require('../src/schema');
 const { createFakeSpreadsheet } = require('./doubles/fakeSpreadsheet');
 

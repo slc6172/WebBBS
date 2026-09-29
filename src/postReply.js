@@ -22,8 +22,12 @@ function recordMentionsForContentFor_(spreadsheet, lock, params) {
   return (_mentionsModule ? _mentionsModule.recordMentionsForContent_ : recordMentionsForContent_)(spreadsheet, lock, params);
 }
 
+function validateMentionCountFor_(text) {
+  return (_mentionsModule ? _mentionsModule.validateMentionCount_ : validateMentionCount_)(text);
+}
+
 function getRolePermissionsFor_(spreadsheet, role) {
-  return (_permissionsModule ? _permissionsModule.getRolePermissions : getRolePermissions)(spreadsheet, role);
+  return (_permissionsModule ? _permissionsModule.getRolePermissions_ : getRolePermissions_)(spreadsheet, role);
 }
 
 function boardAllowsRoleByIdFor_(spreadsheet, boardId, role) {
@@ -130,13 +134,21 @@ function createReply(spreadsheet, lock, input) {
  * only the board-specific gate — which needs to know the article's
  * boardId — waits until the read that also finds the row happens.
  */
-function createReplyForRole(spreadsheet, lock, role, input) {
+function createReplyForRole_(spreadsheet, lock, role, input) {
   if (!getRolePermissionsFor_(spreadsheet, role).replyPost) {
     return { success: false, error: '權限不足' };
   }
   var contentCheck = validateArticleContentFor_(input.content);
   if (!contentCheck.valid) {
     return { success: false, error: contentCheck.error };
+  }
+  // API4（換角度複查輪，對照 OWASP API Security Top 10 2023）：跟
+  // postArticle.js 的 createArticle 同一個理由、同一個位置——回覆沒有
+  // 標題欄位，直接驗 content 本身,跟下面 recordMentionsForContentFor_
+  // 實際掃描的 text: input.content 完全一致。
+  var mentionCountCheck = validateMentionCountFor_(input.content);
+  if (!mentionCountCheck.valid) {
+    return { success: false, error: mentionCountCheck.error };
   }
 
   // @提及輪 ticket 05：result／articleInfo 提到 try 區塊外面宣告，區塊內
@@ -175,5 +187,5 @@ function createReplyForRole(spreadsheet, lock, role, input) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createReply: createReply, createReplyForRole: createReplyForRole };
+  module.exports = { createReply: createReply, createReplyForRole_: createReplyForRole_ };
 }

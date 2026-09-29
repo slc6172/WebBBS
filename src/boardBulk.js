@@ -12,6 +12,11 @@
  */
 var BOARD_BULK_PAGE_SIZE = 300; // 可調整的批次篇數上限，見 ticket 05 如何餵進來
 
+var _textCoercionModule = (typeof require !== 'undefined') ? require('./textCoercion') : null;
+function toSafeDisplayStringFor_(value) {
+  return (_textCoercionModule ? _textCoercionModule.toSafeDisplayString_ : toSafeDisplayString_)(value);
+}
+
 /**
  * 圖片張數突破：Articles 表的圖片欄位從 imageUrl1~3 三欄合併成單一個
  * JSON 陣列字串欄位。空值的標準表示法是 '[]'；任何無法解析的內容（理論上
@@ -54,9 +59,9 @@ function readArticlesForBoard_(sheet, boardId) {
     articles.push({
       articleId: row[0],
       boardId: row[1],
-      title: row[2],
+      title: toSafeDisplayStringFor_(row[2]),
       author: row[3],
-      content: row[4],
+      content: toSafeDisplayStringFor_(row[4]),
       createdAt: row[5],
       editedAt: row[6],
       editedBy: row[7],
@@ -115,7 +120,7 @@ function groupRepliesByArticleId_(sheet, articleIds) {
       replyId: row[0],
       articleId: row[1],
       author: row[2],
-      content: row[3],
+      content: toSafeDisplayStringFor_(row[3]),
       createdAt: row[4]
     });
   }
@@ -130,7 +135,7 @@ function groupRepliesByArticleId_(sheet, articleIds) {
  * @param {number} [pageSize]
  * @returns {{articles: Array, repliesByArticleId: Object, hasMore: boolean, totalCount: number, pageSize: number}}
  */
-function getBoardBulkPage(spreadsheet, boardId, pageIndex, pageSize) {
+function getBoardBulkPage_(spreadsheet, boardId, pageIndex, pageSize) {
   var size = pageSize || BOARD_BULK_PAGE_SIZE;
   var allArticles = readArticlesForBoard_(spreadsheet.getSheetByName('Articles'), boardId);
   // 安全性審查 M2 修復：pageIndex 是客戶端直接傳入的參數，負數會讓
@@ -188,7 +193,7 @@ function findArticlePageIndex(spreadsheet, boardId, articleId, pageSize) {
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
-    getBoardBulkPage: getBoardBulkPage,
+    getBoardBulkPage_: getBoardBulkPage_,
     findArticlePageIndex: findArticlePageIndex,
     BOARD_BULK_PAGE_SIZE: BOARD_BULK_PAGE_SIZE
   };
