@@ -104,6 +104,94 @@ function validateImageMimeType(mimeType) {
   return { valid: true };
 }
 
+
+// mycr 重掃 F-04：validateImageMimeType 只看客戶端「宣稱」的型別，base64 內容
+// 本身從未被檢查——有發文權限的帳號可以把任意內容標成 image/png 存進公開的
+// Drive 連結。這裡改看檔頭的魔術位元組判斷「實際是什麼」，只解碼開頭 16 個
+// base64 字元（12 bytes），成本與檔案大小無關。
+var BASE64_ALPHABET_ = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
+/**
+ * 解碼 base64 字串開頭的 16 個字元成 12 個位元組；字串太短或含有非 base64
+ * 字元回傳 null。純函式，不依賴 GAS 的 Utilities（Node 測試與 GAS 都能跑）。
+ * @param {*} base64Data
+ * @returns {number[]|null}
+ */
+function decodeBase64Head_(base64Data) {
+  if (typeof base64Data !== 'string' || base64Data.length < 16) {
+    return null;
+  }
+  var bytes = [];
+  for (var i = 0; i < 16; i += 4) {
+    var n = 0;
+    for (var j = 0; j < 4; j++) {
+      var idx = BASE64_ALPHABET_.indexOf(base64Data.charAt(i + j));
+      if (idx === -1) {
+        return null;
+      }
+      n = (n << 6) | idx;
+    }
+    bytes.push((n >> 16) & 255, (n >> 8) & 255, n & 255);
+  }
+  return bytes;
+}
+
+/**
+ * 依檔頭判斷圖片實際格式。只認 ALLOWED_IMAGE_MIME_TYPES 這四種，其餘（含
+ * SVG、HTML、PDF、可執行檔、RIFF 容器但不是 WEBP 的 WAV/AVI）一律回傳 null。
+ * @param {*} base64Data
+ * @returns {string|null}
+ */
+function detectImageType(base64Data) {
+  var b = decodeBase64Head_(base64Data);
+  if (!b) {
+    return null;
+  }
+  if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47 &&
+      b[4] === 0x0d && b[5] === 0x0a && b[6] === 0x1a && b[7] === 0x0a) {
+    return 'image/png';
+  }
+  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) {
+    return 'image/jpeg';
+  }
+  if (b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x38 &&
+      (b[4] === 0x37 || b[4] === 0x39) && b[5] === 0x61) {
+    return 'image/gif';
+  }
+  if (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 &&
+      b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) {
+    return 'image/webp';
+  }
+  return null;
+}
+
+/**
+ * 以檔頭判斷結果為準。回傳「實際偵測到」的 mimeType，呼叫端應該改用它而不是
+ * 客戶端宣稱的值——這樣副檔名被改錯、但內容是真圖片的檔案（例如 PNG 改名成
+ * .jpg，瀏覽器會回報 image/jpeg）仍然可以正常上傳，不會誤傷正常使用者。
+ * @param {*} base64Data
+ * @param {*} claimedMimeType - 保留參數；目前只用實際偵測結果，不比對是否相符
+ * @returns {{valid: boolean, mimeType?: string, error?: string}}
+ */
+function validateImageContent(base64Data, claimedMimeType) {
+  var detected = detectImageType(base64Data);
+  if (!detected) {
+    return { valid: false, error: '檔案內容不是支援的圖片格式' };
+  }
+  return { valid: true, mimeType: detected };
+}
+
+/**
+ * Drive 檔名一律由伺服器產生，不使用客戶端傳來的 fileName（型別、長度、字元
+ * 都沒有驗證過）。這支只負責決定副檔名。
+ * @param {*} mimeType
+ * @returns {string}
+ */
+function imageFileExtensionForMimeType(mimeType) {
+  var map = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp' };
+  return (typeof mimeType === 'string' && Object.prototype.hasOwnProperty.call(map, mimeType)) ? map[mimeType] : 'bin';
+}
+
 /**
  * 取得圖片根資料夾；指令碼屬性沒設定過，或設定的 ID 已經失效（例如資料夾被
  * 手動刪除），都視為「尚未設定」，自動建立一個新資料夾並把 ID 寫回指令碼屬性。
@@ -271,6 +359,9 @@ if (typeof module !== 'undefined' && module.exports) {
     validateImageCount: validateImageCount,
     validateImageMimeType: validateImageMimeType,
     validateImageDataSize: validateImageDataSize,
+    detectImageType: detectImageType,
+    validateImageContent: validateImageContent,
+    imageFileExtensionForMimeType: imageFileExtensionForMimeType,
     ALLOWED_IMAGE_MIME_TYPES: ALLOWED_IMAGE_MIME_TYPES,
     MAX_IMAGES_PER_ARTICLE: MAX_IMAGES_PER_ARTICLE,
     MAX_IMAGE_DATA_BYTES: MAX_IMAGE_DATA_BYTES,

@@ -144,7 +144,9 @@ function uploadArticleImages_(images) {
   var urls = [];
   for (var i = 0; i < Math.min(images.length, MAX_IMAGES_PER_ARTICLE); i++) {
     var img = images[i];
-    var saved = saveArticleImage(drive, properties, img.data, img.mimeType, img.fileName, yyyyMM);
+    // mycr 重掃 F-04：Drive 檔名由伺服器產生，不使用客戶端傳來的 fileName。
+    var serverFileName = 'img-' + Utilities.getUuid() + '.' + imageFileExtensionForMimeType(img.mimeType);
+    var saved = saveArticleImage(drive, properties, img.data, img.mimeType, serverFileName, yyyyMM);
     urls.push(saved.url);
   }
   return urls;
@@ -267,6 +269,14 @@ function uploadImageBatch(token, images) {
     if (!validateImageDataSize(images[i] && images[i].data).valid) {
       return { success: false, error: '圖片檔案大小超過上限' };
     }
+    // mycr 重掃 F-04：不只看客戶端宣稱的 mimeType，還要檢查檔頭魔術位元組
+    // （只解碼開頭 12 bytes，成本與檔案大小無關）。後續一律使用「實際偵測到」
+    // 的型別，所以副檔名被改錯的真圖片仍可正常上傳。
+    var contentCheck = validateImageContent(images[i].data, images[i].mimeType);
+    if (!contentCheck.valid) {
+      return { success: false, error: contentCheck.error };
+    }
+    images[i] = { data: images[i].data, mimeType: contentCheck.mimeType };
   }
   var urls = uploadArticleImages_(images);
   addPendingImageUrls_(cache, token, urls);
@@ -510,6 +520,10 @@ function getBoardBulkFromToken(token, boardId, pageIndex, clientVersion, lastSee
   }
   var snapshot = getSessionSnapshot(cache, token);
   var allowed = snapshotAllowsBoardArticleRead(snapshot, boardId);
+  // mycr 重掃 F-06：先把客戶端傳入的頁碼正規化成非負整數，再組快取 key。
+  // 原本直接串接原始字串，已登入的讀者可用任意字串（'03'、' 3'、亂碼）無限
+  // 建立快取項目，也會讓同一頁對不上 bump 時使用的 key。
+  pageIndex = normalizePageIndex(pageIndex);
   var versionKey = boardId + ':page' + pageIndex;
   var currentVersion = getBoardVersion(cache, versionKey);
 
@@ -526,8 +540,12 @@ function getBoardBulkFromToken(token, boardId, pageIndex, clientVersion, lastSee
   // UUID；已經有版本時沿用它——原本每次「真的重讀了這一頁」都無條件
   // 產生新版本，會讓兩個使用者輪流讀同一頁時互相打掉對方剛存好的快取，
   // 即使期間完全沒有任何寫入發生。
+  // mycr 重掃 F-06：超出範圍的空頁不寫入版本快取（第 0 頁例外），避免有人用
+  // 大量不同頁碼灌滿 CacheService、擠掉 session 與節流計數。
   var version = currentVersion || Utilities.getUuid();
-  bumpBoardVersion(cache, versionKey, version);
+  if (shouldCacheBoardPageVersion(pageIndex, page.articles.length)) {
+    bumpBoardVersion(cache, versionKey, version);
+  }
   // 未讀/新回覆徽章（ticket 01）：lastSeenAt 是前端從 getBoardsFromToken 頁面
   // 載入時就已經拿到的值，這裡原封不動當參數收下——不是機密，也不影響誰能
   // 讀到什麼內容，頂多影響徽章顯示對不對，因此刻意不在這裡另外查一次
@@ -975,10 +993,13 @@ function loginFromForm(userId, password) {
   };
   var nowTimestamp = Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyy/MM/dd HH:mm:ss');
 
+  // mycr 重掃 F-03：傳入 script lock，讓登入失敗計數的「預留」是原子的
+  // （見 login.js 的 reserveLoginAttempt_）。這個函式本身沒有持有其他鎖，
+  // login_ 只在預留/還回那幾行取鎖、取完立刻釋放，雜湊運算不在鎖內。
   return login_(getSpreadsheet_(), cache, tokenGenerator, digestFn, nowTimestamp, {
     userId: userId,
     password: password
-  });
+  }, LockService.getScriptLock());
 }
 
 /**

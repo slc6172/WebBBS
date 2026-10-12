@@ -128,6 +128,39 @@ function groupRepliesByArticleId_(sheet, articleIds) {
   return grouped;
 }
 
+// mycr 重掃 F-06：頁碼上限。實務上一個看板不會有這麼多頁，只是讓
+// 「由客戶端控制的數字」永遠落在可預期的範圍內。
+var MAX_BOARD_PAGE_INDEX = 1000000;
+
+/**
+ * 把客戶端傳入的 pageIndex 正規化成非負整數（不符合一律當第 0 頁）。同一頁
+ * 的各種寫法（'03'、' 3 '、3.9）都收斂成同一個數字，快取 key 因此唯一。
+ * getBoardBulkPage_ 與 Code.js 的 getBoardBulkFromToken 共用這一份邏輯。
+ * @param {*} pageIndex
+ * @returns {number}
+ */
+function normalizePageIndex(pageIndex) {
+  if (typeof pageIndex !== 'number' && typeof pageIndex !== 'string') {
+    return 0;
+  }
+  var n = Math.floor(Number(pageIndex));
+  if (!isFinite(n) || n < 0) {
+    return 0;
+  }
+  return Math.min(n, MAX_BOARD_PAGE_INDEX);
+}
+
+/**
+ * 只有第 0 頁、或真的有文章的頁次才值得寫進版本快取。超出範圍的頁碼（空頁）
+ * 不寫，避免有人用大量不同頁碼灌滿 CacheService。
+ * @param {number} normalizedPageIndex
+ * @param {number} articleCount
+ * @returns {boolean}
+ */
+function shouldCacheBoardPageVersion(normalizedPageIndex, articleCount) {
+  return normalizedPageIndex === 0 || articleCount > 0;
+}
+
 /**
  * @param {Spreadsheet} spreadsheet
  * @param {string} boardId
@@ -142,7 +175,7 @@ function getBoardBulkPage_(spreadsheet, boardId, pageIndex, pageSize) {
   // Array.slice 的負數起點語意從陣列尾端算起（不是我們要的「翻到某一
   // 頁」語意），非整數/非數字則可能算出 NaN 的 start。這裡正規化成
   // 非負整數，不符合就當作第 0 頁，不噴錯——純運算，不影響讀取次數。
-  var normalizedPageIndex = Math.max(0, Math.floor(Number(pageIndex) || 0));
+  var normalizedPageIndex = normalizePageIndex(pageIndex);
   var start = normalizedPageIndex * size;
   var pageArticles = allArticles.slice(start, start + size);
   var articleIds = pageArticles.map(function (a) { return a.articleId; });
@@ -195,6 +228,8 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     getBoardBulkPage_: getBoardBulkPage_,
     findArticlePageIndex: findArticlePageIndex,
+    normalizePageIndex: normalizePageIndex,
+    shouldCacheBoardPageVersion: shouldCacheBoardPageVersion,
     BOARD_BULK_PAGE_SIZE: BOARD_BULK_PAGE_SIZE
   };
 }

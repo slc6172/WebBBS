@@ -33,8 +33,44 @@ function isWebhookForThisBot(body, expectedBotUserId) {
   return !!body && body.destination === expectedBotUserId;
 }
 
+
+/**
+ * mycr 重掃 F-12：doPost 原本直接 JSON.parse(e.postData.contents)，格式錯誤
+ * 的請求會丟例外（GAS 回 500、錯誤進執行紀錄）。改成解析失敗或結果不是
+ * 物件時回傳 null，由 doPost 以空白 200 回應，跟 destination 不符時一致。
+ * @param {*} raw
+ * @returns {Object|null}
+ */
+function parseWebhookBody(raw) {
+  if (typeof raw !== 'string' || raw === '') {
+    return null;
+  }
+  try {
+    var parsed = JSON.parse(raw);
+    return (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : null;
+  } catch (err) {
+    return null;
+  }
+}
+
+/**
+ * 寫進記錄檔前清理外部來源字串：控制字元（含換行）換成空白、長度上限 80，
+ * 避免偽造多行紀錄與灌爆記錄檔。
+ * @param {*} value
+ * @returns {string}
+ */
+function sanitizeForLog(value) {
+  if (typeof value !== 'string' && typeof value !== 'number') {
+    return '';
+  }
+  var str = String(value).replace(/[\u0000-\u001f\u007f]/g, ' ');
+  return str.length > 80 ? str.slice(0, 80) + '…' : str;
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
-    isWebhookForThisBot: isWebhookForThisBot
+    isWebhookForThisBot: isWebhookForThisBot,
+    parseWebhookBody: parseWebhookBody,
+    sanitizeForLog: sanitizeForLog
   };
 }

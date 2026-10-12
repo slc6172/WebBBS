@@ -73,6 +73,14 @@ function isWebhookForThisBotFor_(body, expectedBotUserId) {
   return (_verifyWebhookDestinationModule ? _verifyWebhookDestinationModule.isWebhookForThisBot : isWebhookForThisBot)(body, expectedBotUserId);
 }
 
+function parseWebhookBodyFor_(raw) {
+  return (_verifyWebhookDestinationModule ? _verifyWebhookDestinationModule.parseWebhookBody : parseWebhookBody)(raw);
+}
+
+function sanitizeForLogFor_(value) {
+  return (_verifyWebhookDestinationModule ? _verifyWebhookDestinationModule.sanitizeForLog : sanitizeForLog)(value);
+}
+
 function computeNextDigestSequenceFor_(lastDigestDate, todayDigestCount, today) {
   return (_lineGroupBoardModule ? _lineGroupBoardModule.computeNextDigestSequence : computeNextDigestSequence)(lastDigestDate, todayDigestCount, today);
 }
@@ -512,7 +520,12 @@ function dailyLineDigestCheck_() {
  */
 function doPost(e) {
   var properties = PropertiesService.getScriptProperties();
-  var body = JSON.parse(e.postData.contents);
+  // mycr 重掃 F-12：格式錯誤或不是物件的內容不再丟例外，直接當作無效請求
+  // 以空白 200 回應（跟 destination 不符時一致，不讓探測者分辨原因）。
+  var body = parseWebhookBodyFor_(e && e.postData && e.postData.contents);
+  if (!body) {
+    return ContentService.createTextOutput('');
+  }
 
   // 安全性審查 M3 修復：見 verifyWebhookDestination.js 開頭的說明。這不是
   // 簽章驗證（GAS 的 doPost(e) 讀不到 X-Line-Signature 標頭），只是
@@ -523,7 +536,7 @@ function doPost(e) {
   // 出「是不是猜對了 destination」。
   var expectedBotUserId = properties.getProperty('LINE_BOT_USER_ID');
   if (!isWebhookForThisBotFor_(body, expectedBotUserId)) {
-    console.log('收到 destination 不符的 webhook 請求，body.destination=' + (body && body.destination) + '（如果這是正常流量，檢查 Script Properties 的 LINE_BOT_USER_ID 是否設定正確）');
+    console.log('收到 destination 不符的 webhook 請求，body.destination=' + sanitizeForLogFor_(body.destination) + '（如果這是正常流量，檢查 Script Properties 的 LINE_BOT_USER_ID 是否設定正確）');
     return ContentService.createTextOutput('');
   }
 

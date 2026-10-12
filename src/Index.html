@@ -818,6 +818,55 @@
       background: rgba(179, 73, 46, 0.94);
     }
 
+    /* ---- 跨頁背景工作狀態提示（bg-task-indicator）：圖片批次上傳、看板整批載入這類
+       明顯比較慢的操作，原本只有「觸發它的那顆按鈕」會變成「上傳中...」/「載入中...」，
+       使用者一旦切到別篇文章或別的看板就完全看不到進度。這個小提示獨立於任何畫面，
+       不取代按鈕級提示，兩者並存。刻意 pointer-events: none、不建立遮罩、不碰任何其他
+       元素的 disabled 狀態——背景工作進行中使用者必須能自由切換文章、看板與功能。
+       位置在 app-toast 上方一點、z-index 比 toast 低一級，兩者同時出現也不會疊在一起。 */
+    .bg-task-indicator {
+      position: fixed;
+      left: 50%;
+      bottom: 76px;
+      transform: translateX(-50%) translateY(8px);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(48, 45, 38, 0.88);
+      color: #fff;
+      padding: 6px 14px;
+      border-radius: 16px;
+      font-size: 0.8rem;
+      z-index: 99;
+      opacity: 0;
+      transition: opacity 0.2s ease, transform 0.2s ease;
+      pointer-events: none;
+      max-width: 70vw;
+      text-align: center;
+      box-shadow: 0 4px 12px rgba(var(--shadow-rgb), 0.18);
+    }
+    .bg-task-indicator.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+    .bg-task-indicator.success { background: rgba(62, 112, 76, 0.92); }
+    .bg-task-indicator.failure { background: rgba(179, 73, 46, 0.94); }
+    .bg-task-indicator .bg-task-spinner {
+      display: none;
+      width: 12px;
+      height: 12px;
+      border: 2px solid rgba(255, 255, 255, 0.35);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: bg-task-spin 0.8s linear infinite;
+      flex-shrink: 0;
+    }
+    .bg-task-indicator.running .bg-task-spinner { display: inline-block; }
+    @keyframes bg-task-spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) {
+      .bg-task-indicator .bg-task-spinner { animation: none; }
+    }
+
     /* ---- 通用確認彈窗（confirmPopup）：取代 confirm()，理由同上方 app-toast 的
        說明。沿用 .board-list-popup 的彈窗外殼，內容區自訂成「訊息 + 取消/確定」
        兩顆按鈕的簡單版面。 */
@@ -1097,7 +1146,10 @@
     <img id="lightboxImage" src="" alt="放大圖片" />
   </div>
 
-  <script>
+  <!-- 跨頁背景工作狀態提示：見上方 .bg-task-indicator 的說明。內容一律用 textContent 寫入。 -->
+<div id="bgTaskIndicator" class="bg-task-indicator" role="status" aria-live="polite"><span class="bg-task-spinner"></span><span class="bg-task-text"></span></div>
+
+<script>
     // 全域變數狀態
     // 安全性審查 H1 修復＋實際部署後的追加修正（見對話紀錄）：這兩個值
     // 用「不跳脫」樣板插值語法直接印成這個區塊裡的變數宣告，但 Code.js 的
@@ -1406,7 +1458,7 @@
         }
         rows += '<div class="leaderboard-row"><span class="leaderboard-rank">#' + rank + '</span>' +
           '<span class="leaderboard-user">' + escapeHtml(item.userId) + '</span>' +
-          '<span class="leaderboard-value">' + item.value + '</span></div>';
+          '<span class="leaderboard-value">' + escapeHtml(String(item.value)) + '</span></div>';
       });
       return '<div class="leaderboard-category"><h4>' + escapeHtml(title) + '</h4>' + rows + '</div>';
     }
@@ -1685,6 +1737,9 @@
         div.onclick = function() {
           selectArticle(item.articleId, div);
         };
+        // mycr 重掃 A-4：讓上一篇/下一篇能「依 articleId」找到對應的列表節點，
+        // 不再靠 DOM 索引對應（搜尋模式下 DOM 只有符合的項目，索引對不上）。
+        div.setAttribute('data-article-id', item.articleId);
         // 未讀文章/新回覆徽章（ticket 01）：伺服器算出來的 isNew/hasNewReply
         // 之外，還要看這篇這個 session 有沒有已經被本地標記成「開過了」——
         // 開過就不再顯示，不管伺服器那份資料有沒有機會重新整理。
@@ -1695,7 +1750,7 @@
           <div class="title" title="${escapeHtml(item.title)}">${showNewArticleBadge ? '<span class="badge-new">N</span>' : ''}${escapeHtml(item.title)}</div>
           <div class="meta">
             <span>${escapeHtml(item.author)}</span>
-            <span>${showNewReplyBadge ? '<span class="badge-new">N</span>' : ''}💬${item.replyCount || 0}</span>
+            <span>${showNewReplyBadge ? '<span class="badge-new">N</span>' : ''}💬${Number(item.replyCount) || 0}</span>
           </div>
         `;
         listContainer.appendChild(div);
@@ -1830,7 +1885,9 @@
       var searchBtn = document.getElementById('searchLoadMoreBtn');
       if (searchBtn) { searchBtn.disabled = true; searchBtn.textContent = '載入中...'; }
 
+      var loadMoreTask = beginBackgroundTask_('載入文章中…', '載入文章失敗');
       google.script.run.withSuccessHandler(function(json) {
+        loadMoreTask.done();
         var res = {};
         try { res = JSON.parse(json || '{}'); } catch (e) { res = {}; }
 
@@ -1850,6 +1907,7 @@
           renderArticleListFromCache(boardId);
         }
       }).withFailureHandler(function(err) {
+        loadMoreTask.fail();
         if (btn) { btn.disabled = false; btn.textContent = '載入更早的文章'; }
         if (searchBtn) { searchBtn.disabled = false; searchBtn.textContent = '載入更早的文章再搜一次'; }
         showFailureToast_('載入更早的文章失敗', err);
@@ -1935,7 +1993,9 @@
       listContainer.innerHTML = '<div class="placeholder-msg" style="margin-top: 40px; font-size: 0.9rem;">載入中...</div>';
       closePageJumpPopup();
 
+      var jumpTask = beginBackgroundTask_('載入文章中…', '載入文章失敗');
       google.script.run.withSuccessHandler(function(json) {
+        jumpTask.done();
         var res = {};
         try { res = JSON.parse(json || '{}'); } catch (e) { res = {}; }
 
@@ -1950,6 +2010,7 @@
         };
         renderArticleListFromCache(boardId);
       }).withFailureHandler(function(err) {
+        jumpTask.fail();
         renderArticleListFromCache(boardId); // 退回原本已快取的畫面，不留在「載入中」
         showFailureToast_('跳頁失敗', err);
       }).getBoardBulkFromToken(currentToken, boardId, targetPageIndex, '', getBoardLastSeenAt_(boardId));
@@ -2094,7 +2155,9 @@
       var entry = boardBulkCache[boardId];
       var knownVersion = (entry && entry.baseIndex === 0 && entry.pages[0]) ? entry.pages[0].version : '';
 
+      var loadTask = beginBackgroundTask_('載入文章中…', '載入文章失敗');
       google.script.run.withSuccessHandler(function(json) {
+        loadTask.done();
         var res = {};
         try { res = JSON.parse(json || '{}'); } catch (e) { res = {}; }
 
@@ -2114,6 +2177,16 @@
         };
         renderArticleListFromCache(boardId);
         openDeepLinkedArticleIfPending();
+      }).withFailureHandler(function(err) {
+        // 狀態提示的計數器必須在失敗路徑也結束，否則提示會永遠卡著；順便補上這條路徑
+        // 原本缺少的處理（以前失敗時列表會一直停在「載入中...」、沒有任何訊息）。
+        loadTask.fail();
+        if (boardBulkCache[boardId]) {
+          renderArticleListFromCache(boardId);
+        } else {
+          listContainer.innerHTML = '<div class="placeholder-msg" style="margin-top: 40px; font-size: 0.9rem;">載入失敗，請重新整理或切換看板再試</div>';
+        }
+        showFailureToast_('載入文章失敗', err);
       }).getBoardBulkFromToken(currentToken, boardId, 0, knownVersion, getBoardLastSeenAt_(boardId));
     }
 
@@ -2335,8 +2408,18 @@
       if (index === -1) return;
       var targetIndex = index + direction;
       if (targetIndex < 0 || targetIndex >= articles.length) return;
-      var targetEl = document.querySelectorAll('.article-item')[targetIndex]; // DOM 順序保證跟 articles 陣列順序一致，見 currentBoardArticlesFlat_ 的說明
-      selectArticle(articles[targetIndex].articleId, targetEl || null);
+      // mycr 重掃 A-4：依 articleId 找節點。搜尋模式下 DOM 只含符合的項目，用索引
+      // 取會高亮到錯誤的文章；找不到（被搜尋濾掉）就傳 null，仍然照 id 切換文章。
+      var targetId = articles[targetIndex].articleId;
+      var targetEl = null;
+      var listNodes = document.querySelectorAll('.article-item');
+      for (var n = 0; n < listNodes.length; n++) {
+        if (listNodes[n].getAttribute('data-article-id') === targetId) {
+          targetEl = listNodes[n];
+          break;
+        }
+      }
+      selectArticle(targetId, targetEl);
     }
 
     // 手機導覽補強輪 ticket 01：算出目前文章在清單裡是否還有上一篇/下一篇，
@@ -3056,6 +3139,9 @@
       }
       var batches = chunkFilesByBytes_(files, IMAGE_UPLOAD_BATCH_BYTES);
       var allUrls = [];
+      // 跨頁背景工作狀態提示：整個分批上傳視為一個背景工作，成功/失敗（含任何一批
+      // 失敗、轉 base64 例外）都會結束它——見 .then(成功, 失敗) 兩條路徑。
+      var uploadTask = beginBackgroundTask_('圖片上傳中…', '圖片上傳失敗');
       return batches.reduce(function(chain, batchFiles) {
         return chain.then(function() {
           return readFilesAsBase64Payload(batchFiles).then(function(payloads) {
@@ -3081,7 +3167,11 @@
           });
         });
       }, Promise.resolve()).then(function() {
+        uploadTask.done();
         return allUrls;
+      }, function(err) {
+        uploadTask.fail();
+        throw err;
       });
     }
 
@@ -3625,6 +3715,112 @@
         return;
       }
       document.getElementById('shareLinkInput').select();
+    }
+
+    // ---- 跨頁背景工作狀態提示：計數器（純邏輯，不碰 DOM，test/backgroundTaskTracker.test.js
+    // 直接擷取 BEGIN/END 標記之間的程式碼來測試）。
+    // 規則：
+    //   - 工作開始後超過 SHOW_DELAY_MS 還沒結束才顯示——很快就做完的操作維持現有的
+    //     輕量回饋，不閃一下提示。
+    //   - 可重入計數：同時有多個背景工作時，要全部結束才進入成功/失敗收尾狀態。
+    //   - 每個工作的 done/fail 只有第一次呼叫有效，重複呼叫不會把計數扣兩次。
+    //   - 從來沒顯示過的工作失敗時保持安靜（各呼叫端既有的失敗 toast 已經會告知）；
+    //     顯示過的才用失敗樣式收尾，讓使用者分得出「還在跑」跟「已經失敗」。
+    // 呼叫端的責任：每條路徑（成功、失敗、例外）都必須結束自己的工作，否則提示會一直
+    // 顯示——所以呼叫點一律在 handler 的第一行就呼叫 done()/fail()，再做後續渲染。
+    // BEGIN backgroundTaskTracker
+    function createBackgroundTaskTracker_(deps) {
+      var SHOW_DELAY_MS = 600;
+      var SUCCESS_MS = 1200;
+      var FAILURE_MS = 4000;
+      var active = 0;
+      var failed = 0;
+      var label = '';
+      var failText = '';
+      var visible = false;
+      var showTimer = null;
+      var hideTimer = null;
+
+      function show(mode, text) {
+        visible = true;
+        deps.render({ visible: true, mode: mode, text: text });
+      }
+      function hide() {
+        visible = false;
+        failed = 0;
+        deps.render({ visible: false, mode: 'running', text: '' });
+      }
+      function runningText() {
+        return active > 1 ? '背景作業進行中（' + active + '）' : label;
+      }
+
+      function begin(taskLabel, taskFailText) {
+        if (active === 0) failed = 0;
+        active += 1;
+        label = taskLabel || '處理中…';
+        if (hideTimer !== null) { deps.clearTimeout(hideTimer); hideTimer = null; }
+        if (visible) {
+          show('running', runningText());
+        } else if (showTimer === null) {
+          showTimer = deps.setTimeout(function() {
+            showTimer = null;
+            if (active > 0) show('running', runningText());
+          }, SHOW_DELAY_MS);
+        }
+
+        var finished = false;
+        function finish(ok) {
+          if (finished) return;
+          finished = true;
+          active = Math.max(0, active - 1);
+          if (!ok) { failed += 1; failText = taskFailText || '背景作業失敗'; }
+          if (active > 0) {
+            if (visible) show('running', runningText());
+            return;
+          }
+          if (showTimer !== null) { deps.clearTimeout(showTimer); showTimer = null; }
+          if (!visible) { failed = 0; return; }
+          var isFail = failed > 0;
+          show(isFail ? 'failure' : 'success', isFail ? failText : '完成');
+          hideTimer = deps.setTimeout(function() { hideTimer = null; hide(); }, isFail ? FAILURE_MS : SUCCESS_MS);
+        }
+        return {
+          done: function() { finish(true); },
+          fail: function() { finish(false); }
+        };
+      }
+      return { begin: begin };
+    }
+    // END backgroundTaskTracker
+
+    function renderBackgroundIndicator_(state) {
+      var el = document.getElementById('bgTaskIndicator');
+      if (!el) return;
+      var textEl = el.querySelector('.bg-task-text');
+      if (textEl) textEl.textContent = state.text; // 一律 textContent，不用 innerHTML
+      el.classList.remove('running', 'success', 'failure');
+      if (state.visible) {
+        el.classList.add(state.mode);
+        el.classList.add('show');
+      } else {
+        el.classList.remove('show');
+      }
+    }
+
+    var backgroundTaskTracker_ = createBackgroundTaskTracker_({
+      setTimeout: function(fn, ms) { return window.setTimeout(fn, ms); },
+      clearTimeout: function(id) { window.clearTimeout(id); },
+      render: renderBackgroundIndicator_
+    });
+
+    // 包一層保護：提示元件本身出任何狀況，都不能影響真正的上傳/載入流程。
+    function beginBackgroundTask_(label, failText) {
+      try {
+        return backgroundTaskTracker_.begin(label, failText);
+      } catch (e) {
+        console.error('background task indicator', e);
+        return { done: function() {}, fail: function() {} };
+      }
     }
 
     // 輕量提示：取代 alert() 顯示短暫確認/錯誤訊息，不會觸發原生對話框的網域顯示

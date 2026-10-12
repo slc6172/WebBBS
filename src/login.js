@@ -146,6 +146,8 @@ function roleAllowsLogin_(spreadsheet, role) {
  * @param {string} nowTimestamp - 由呼叫端（GAS 環境）用 Utilities.formatDate 產生好傳進來，
  *   保持這支函式本身不碰真實時鐘、好測試（比照 register.js 的 createdAt 慣例）
  * @param {{userId: string, password: string}} input
+ * @param {Lock} [lock] - 選用；GAS 傳 LockService.getScriptLock()，省略（測試、舊呼叫端）
+ *   時不上鎖，行為與修復前相同。
  * @returns {{success: boolean, token?: string, loginCount?: number, lastLoginAt?: string, error?: string}}
  *   loginCount 是「這次登入算進去之後」的總數（第一次登入回傳 1）；
  *   lastLoginAt 是「這次登入之前」最後一次登入的時間（第一次登入回傳空字串，
@@ -166,7 +168,79 @@ function isWellFormedUserIdFormat_(userId) {
   return typeof userId === 'string' && userId.length >= 4 && userId.length <= 20 && /^[A-Za-z0-9_]+$/.test(userId);
 }
 
-function login_(spreadsheet, cache, tokenGenerator, digestFn, nowTimestamp, input) {
+// mycr 重掃 F-03：登入失敗計數的「預留」流程。原本是「讀計數 → 驗證密碼 → 寫
+// 計數 +1」，N 個並行請求會在任何人寫回之前全部讀到同一個計數、全部通過
+// 鎖定檢查並各自驗證密碼，每一波只消耗 1 次額度，5 次上限實際可以被繞過。
+// 改成在驗證密碼「之前」，於短鎖內先讀取並預留這次嘗試（計數 +1）：
+// 驗證完成後，鎖早就已經釋放，雜湊運算不在鎖內。
+//
+// 取捨（見 README）：GAS 只有 script/user/document 三種鎖，部署成「以部署者
+// 身分執行」時，這把鎖跟發文、回覆共用——登入因此偶爾要等一下發文寫完。
+// 等待上限 LOGIN_LOCK_WAIT_MS，逾時就退回「不上鎖」（跟修復前行為相同，不會
+// 比以前更糟，也不會讓使用者登不進去）。
+var LOGIN_LOCK_WAIT_MS = 2000;
+
+function acquireLoginLock_(lock) {
+  if (!lock) {
+    return false;
+  }
+  try {
+    lock.waitLock(LOGIN_LOCK_WAIT_MS);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function releaseLoginLock_(lock, acquired) {
+  if (acquired) {
+    try {
+      lock.releaseLock();
+    } catch (e) {
+      // 釋放失敗不影響登入流程
+    }
+  }
+}
+
+/**
+ * @param {Cache} cache
+ * @param {Lock} [lock]
+ * @param {string} failKey
+ * @returns {{allowed: boolean, count: number}} count 是預留之後（允許時）或目前（拒絕時）的計數
+ */
+function reserveLoginAttempt_(cache, lock, failKey) {
+  var acquired = acquireLoginLock_(lock);
+  try {
+    var count = parseInt(cache.get(failKey) || '0', 10) || 0;
+    if (count >= LOGIN_FAIL_THRESHOLD) {
+      return { allowed: false, count: count };
+    }
+    cache.put(failKey, String(count + 1), LOGIN_FAIL_TTL_SECONDS);
+    return { allowed: true, count: count + 1 };
+  } finally {
+    releaseLoginLock_(lock, acquired);
+  }
+}
+
+/**
+ * 把預留的那一次嘗試還回去。只用在「密碼正確、但角色被擋」這條路徑——
+ * 那不是猜密碼，原本就不計入鎖定計數（權限系統 ticket 09）。
+ */
+function refundLoginAttempt_(cache, lock, failKey) {
+  var acquired = acquireLoginLock_(lock);
+  try {
+    var count = parseInt(cache.get(failKey) || '0', 10) || 0;
+    if (count <= 1) {
+      cache.remove(failKey);
+    } else {
+      cache.put(failKey, String(count - 1), LOGIN_FAIL_TTL_SECONDS);
+    }
+  } finally {
+    releaseLoginLock_(lock, acquired);
+  }
+}
+
+function login_(spreadsheet, cache, tokenGenerator, digestFn, nowTimestamp, input, lock) {
   // 格式不合法的輸入（可能來自任何訪客隨手打的字串，不一定對應任何真實
   // 帳號）在這裡就直接拒絕，不建立鎖定快取 key、不寫入 AuditLog、不碰
   // Users 表——這兩者都是有限資源，見 mycr 掃描報告 F-16。回傳跟密碼
@@ -177,9 +251,9 @@ function login_(spreadsheet, cache, tokenGenerator, digestFn, nowTimestamp, inpu
   }
 
   var failKey = LOGIN_FAIL_PREFIX + input.userId;
-  var currentFailCount = parseInt(cache.get(failKey) || '0', 10);
-
-  if (currentFailCount >= LOGIN_FAIL_THRESHOLD) {
+  // mycr 重掃 F-03：先預留這次嘗試（短鎖內讀取 + 計數 +1），再驗證密碼。
+  var reservation = reserveLoginAttempt_(cache, lock, failKey);
+  if (!reservation.allowed) {
     return { success: false, error: '帳號已被暫時鎖定,請稍後再試' };
   }
 
@@ -188,8 +262,8 @@ function login_(spreadsheet, cache, tokenGenerator, digestFn, nowTimestamp, inpu
   var passwordOk = record && verifyPassword(record.passwordHash, record.salt, input.password, digestFn);
 
   if (!passwordOk) {
-    var newFailCount = currentFailCount + 1;
-    cache.put(failKey, String(newFailCount), LOGIN_FAIL_TTL_SECONDS);
+    // 計數已在上面預留過，這裡不再寫入；只決定要不要記稽核。
+    var newFailCount = reservation.count;
     // A09：只在「這一次失敗剛好讓帳號從未鎖定變成鎖定」的那一刻記一筆，
     // 不是每次失敗都記——之前累積到第 1~4 次失敗都不寫，避免把單純的
     // 打錯密碼也算進稀少事件的預算裡。
@@ -204,6 +278,7 @@ function login_(spreadsheet, cache, tokenGenerator, digestFn, nowTimestamp, inpu
   // 拒絕原因，不該共用同一個計數器（否則被停權的帳號被外部一直嘗試，反而
   // 可能先把自己鎖起來）。
   if (!roleAllowsLogin_(spreadsheet, record.role)) {
+    refundLoginAttempt_(cache, lock, failKey);
     return { success: false, error: 'userId 或密碼錯誤' };
   }
 
